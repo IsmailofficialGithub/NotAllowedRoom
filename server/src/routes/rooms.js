@@ -12,13 +12,13 @@ router.post('/create', (req, res) => {
         }
         const roomId = uuidv4();
 
-        const room = {
+        const roomData = {
             id: roomId,
             hostName: name,
-            createdAt: new Date.now().toISOString(),
+            createdAt: new Date().toISOString(),
             participates: []
         }
-        room.set(roomId, room);
+        room.set(roomId, roomData);
         console.log('Room Created successfully');
 
 
