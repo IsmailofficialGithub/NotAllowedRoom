@@ -13,7 +13,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(!initialVideo);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [localIsSpeaking, setLocalIsSpeaking] = useState(false);
   
   const localVideoRef = useRef();
   const localStreamRef = useRef(null);
@@ -26,6 +26,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
     ]
   };
 
@@ -35,12 +36,11 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
       isInitializing.current = true;
       
       try {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 600));
         const stream = await startLocalStream();
         
         if (stream && !hasJoinedCall.current) {
           hasJoinedCall.current = true;
-          console.log('📡 [Call] Joining room:', roomId);
           socket.emit('join_call', { room_id: roomId });
         }
       } catch (err) {
@@ -57,7 +57,6 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
     socket.on('user_left_call', handleUserLeft);
 
     return () => {
-      console.log('🚮 [Call] Cleaning up...');
       socket.emit('leave_call', { room_id: roomId });
       socket.off('user_joined_call');
       socket.off('call_signal');
@@ -73,10 +72,42 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
     };
   }, [socket, roomId]);
 
+  // Handle local speaking highlight
+  useEffect(() => {
+    if (!localStream || isMuted) {
+      setLocalIsSpeaking(false);
+      return;
+    }
+
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(localStream);
+    source.connect(analyser);
+    analyser.fftSize = 256;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    let animationId;
+    const checkVolume = () => {
+      analyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+      const average = sum / bufferLength;
+      setLocalIsSpeaking(average > 30);
+      animationId = requestAnimationFrame(checkVolume);
+    };
+    checkVolume();
+
+    return () => {
+      cancelAnimationFrame(animationId);
+      audioContext.close();
+    };
+  }, [localStream, isMuted]);
+
   const startLocalStream = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: initialVideo,
+        video: initialVideo ? { width: 1280, height: 720 } : false,
         audio: true
       });
       setLocalStream(stream);
@@ -84,7 +115,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
       return stream;
     } catch (err) {
-      console.warn('[Call] Camera access failed, falling back to audio:', err);
+      console.warn('[Call] Camera access failed, fallback to audio:', err);
       try {
         const audioOnly = await navigator.mediaDevices.getUserMedia({ audio: true });
         setLocalStream(audioOnly);
@@ -92,7 +123,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
         setIsCameraOff(true);
         return audioOnly;
       } catch (audioErr) {
-        console.error('[Call] Mic access failed too:', audioErr);
+        console.error('[Call] Mic access failed:', audioErr);
         return null;
       }
     }
@@ -121,6 +152,17 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
       }));
     };
 
+    peer.onnegotiationneeded = async () => {
+      try {
+        if (peer.signalingState !== 'stable') return;
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        socket.emit('call_signal', { to: targetSocketId, signal: peer.localDescription });
+      } catch (err) {
+        console.error('Negotiation failed:', err);
+      }
+    };
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
         peer.addTrack(track, localStreamRef.current);
@@ -144,7 +186,6 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   const handleUserJoined = ({ socket_id, user }) => {
     if (socket_id === socket.id) return;
     const isInitiator = socket.id > socket_id;
-    console.log(`👤 User joined cal: ${socket_id}. I am initiator: ${isInitiator}`);
     createPeer(socket_id, user, isInitiator);
   };
 
@@ -202,8 +243,11 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
 
         Object.values(peersRef.current).forEach(peer => {
           const sender = peer.getSenders().find(s => s.track?.kind === 'video');
-          if (sender) sender.replaceTrack(track);
-          else peer.addTrack(track, stream);
+          if (sender) {
+            sender.replaceTrack(track);
+          } else {
+            peer.addTrack(track, stream);
+          }
         });
 
         if (localVideoRef.current) {
@@ -213,7 +257,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
         setIsScreenSharing(true);
         track.onended = () => stopScreenShare();
       } catch (err) {
-        console.error('Screen share failed:', err);
+        console.error('Screen sharing failed:', err);
       }
     } else {
       stopScreenShare();
@@ -246,15 +290,15 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
         <div className="header-info">
           <div className="pulse-dot" />
           <div>
-            <h1>Live Call Room</h1>
-            <span className="room-subtext">{remotesCount === 0 ? 'Waitng for others...' : `${remotesCount + 1} participants connected`}</span>
+            <h1>Live Conference</h1>
+            <span className="room-subtext">{remotesCount === 0 ? 'Waitng for others...' : `${remotesCount + 1} participants in call`}</span>
           </div>
         </div>
       </header>
 
       <main className="video-grid-container">
         <div className="video-grid">
-          <div className={`video-container local ${isSpeaking ? 'active-speaker' : ''} ${isScreenSharing ? 'is-sharing' : ''}`}>
+          <div className={`video-container local ${localIsSpeaking ? 'active-speaker' : ''} ${isScreenSharing ? 'is-sharing' : ''}`}>
             <video ref={localVideoRef} autoPlay muted playsInline />
             {isCameraOff && !isScreenSharing && (
               <div className="camera-off-placeholder">
@@ -262,7 +306,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
               </div>
             )}
             <div className="participant-label">
-              {isScreenSharing ? 'You (Screen)' : 'You'} {isMuted && <MicOff size={12} />}
+              {isScreenSharing ? 'You (Screen)' : 'You'} {isMuted && <MicOff size={10} />}
             </div>
           </div>
 
@@ -276,26 +320,16 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
         <div className="controls-inner">
           <button onClick={toggleMute} className={`action-btn ${isMuted ? 'muted' : ''}`}>
             {isMuted ? <MicOff /> : <Mic />}
-            <label>{isMuted ? 'Mute' : 'Unmute'}</label>
+            <label>Mute</label>
           </button>
-
-          <button 
-            onClick={toggleCamera} 
-            disabled={isScreenSharing} 
-            className={`action-btn ${isCameraOff ? 'camera-off' : ''}`}
-          >
+          <button onClick={toggleCamera} disabled={isScreenSharing} className={`action-btn ${isCameraOff ? 'camera-off' : ''}`}>
             {isCameraOff ? <VideoOff /> : <Video />}
             <label>Camera</label>
           </button>
-
-          <button 
-            onClick={toggleScreenShare} 
-            className={`action-btn ${isScreenSharing ? 'sharing' : ''}`}
-          >
+          <button onClick={toggleScreenShare} className={`action-btn ${isScreenSharing ? 'sharing' : ''}`}>
             <Maximize2 />
             <label>Share</label>
           </button>
-
           <button onClick={onLeave} className="action-btn end-call">
             <PhoneOff />
             <label>End</label>
@@ -305,63 +339,36 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
 
       <style>{`
         .call-root-wrapper {
-          position: fixed; inset: 0; height: 100dvh; background: #020205; z-index: 9999;
-          display: flex; flex-direction: column; color: white; overflow: hidden;
+          position: fixed; inset: 0; height: 100dvh; background: #050508; z-index: 9999;
+          display: flex; flex-direction: column; color: white; overflow: hidden; font-family: 'Inter', sans-serif;
         }
-        .call-header { padding: 16px 32px; background: rgba(0,0,0,0.4); flex-shrink: 0; display: flex; align-items: center; }
-        .header-info { display: flex; gap: 12px; align-items: center; }
-        .header-info h1 { font-size: 1rem; margin: 0; font-weight: 600; }
-        .room-subtext { font-size: 0.7rem; color: #94a3b8; }
-        .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
-        
-        .video-grid-container {
-          flex: 1; overflow-y: auto; display: flex; align-items: center; padding: 20px;
-        }
-        .video-grid {
-          display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-          gap: 20px; max-width: 1200px; width: 100%; margin: 0 auto;
-        }
-        .video-container {
-          background: #0f172a; border-radius: 16px; overflow: hidden; aspect-ratio: 16/9;
-          position: relative; border: 1px solid rgba(255,255,255,0.08);
-        }
+        .call-header { padding: 12px 30px; background: rgba(0,0,0,0.6); flex-shrink: 0; display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .header-info { display: flex; gap: 10px; align-items: center; }
+        .header-info h1 { font-size: 0.95rem; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+        .room-subtext { font-size: 0.65rem; color: #64748b; font-weight: 500; }
+        .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 10px #10b981; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 0.4; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); } 100% { opacity: 0.4; transform: scale(0.9); } }
+        .video-grid-container { flex: 1; overflow-y: auto; display: flex; align-items: center; padding: 20px; }
+        .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; max-width: 1300px; width: 100%; margin: 0 auto; }
+        .video-container { background: #0f172a; border-radius: 12px; overflow: hidden; aspect-ratio: 16/9; position: relative; border: 2px solid transparent; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); background-image: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); }
         .video-container video { width: 100%; height: 100%; object-fit: cover; }
         .video-container.local video { transform: scaleX(-1); }
-        .video-container.is-sharing video { transform: none; object-fit: contain; background: black; }
-        .active-speaker { border-color: #6366f1; box-shadow: 0 0 15px #6366f166; }
-        
-        .participant-label {
-          position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.4);
-          padding: 4px 10px; border-radius: 6px; font-size: 0.7rem; backdrop-filter: blur(4px);
-        }
-
-        .camera-off-placeholder {
-          position: absolute; inset: 0; background: #0f172a;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .user-avatar {
-          width: 60px; height: 60px; border-radius: 50%; background: #6366f1;
-          display: flex; align-items: center; justify-content: center; font-weight: bold;
-        }
-
-        .call-controls {
-          padding: 24px; background: rgba(0,0,0,0.6); flex-shrink: 0;
-          display: flex; justify-content: center;
-        }
-        .controls-inner { display: flex; gap: 12px; }
-        .action-btn {
-          width: 60px; height: 60px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1);
-          background: rgba(255,255,255,0.05); color: white; cursor: pointer;
-          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-          transition: all 0.2s;
-        }
-        .action-btn:hover { background: rgba(255,255,255,0.12); transform: translateY(-2px); }
-        .action-btn label { font-size: 0.55rem; font-weight: 600; text-transform: uppercase; }
-        .action-btn.muted, .action-btn.camera-off { color: #ef4444; background: rgba(239,68,68,0.1); }
-        .action-btn.sharing { color: #10b981; background: rgba(16,185,129,0.1); }
-        .action-btn.end-call { background: #ef4444; border: none; width: 70px; }
-        .action-btn.end-call:hover { background: #dc2626; }
+        .video-container.is-sharing video { transform: none; object-fit: contain; background: #000; }
+        .active-speaker { border-color: #6366f1 !important; box-shadow: 0 0 20px rgba(99, 102, 241, 0.4); z-index: 5; }
+        .participant-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 6px; font-size: 0.65rem; backdrop-filter: blur(8px); display: flex; align-items: center; gap: 5px; font-weight: 500; }
+        .camera-off-placeholder { position: absolute; inset: 0; background: #0f172a; display: flex; align-items: center; justify-content: center; }
+        .user-avatar { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #a855f7); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2rem; box-shadow: 0 8px 20px rgba(0,0,0,0.4); border: 2px solid rgba(255,255,255,0.1); }
+        .call-controls { padding: 20px; background: linear-gradient(transparent, rgba(0,0,0,0.9)); flex-shrink: 0; display: flex; justify-content: center; }
+        .controls-inner { display: flex; gap: 14px; background: rgba(15, 23, 42, 0.9); padding: 12px 24px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(20px); }
+        .action-btn { width: 52px; height: 52px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.03); color: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; transition: all 0.2s ease; }
+        .action-btn:hover { background: rgba(255,255,255,0.08); transform: translateY(-2px); border-color: rgba(255,255,255,0.2); }
+        .action-btn:active { transform: translateY(0); }
+        .action-btn label { font-size: 0.5rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
+        .action-btn.muted, .action-btn.camera-off { color: #ef4444; background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.2); }
+        .action-btn.sharing { color: #10b981; background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); }
+        .action-btn.end-call { background: #ef4444; border: none; width: 64px; box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3); }
+        .action-btn.end-call:hover { background: #dc2626; box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4); }
+        .action-btn:disabled { opacity: 0.3; cursor: not-allowed; }
       `}</style>
     </div>
   );
@@ -369,12 +376,48 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
 
 const RemoteVideo = ({ stream, user, socketId }) => {
   const videoRef = useRef();
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
   useEffect(() => {
-    if (videoRef.current && stream) videoRef.current.srcObject = stream;
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  // Audio analysis for remote highlight
+  useEffect(() => {
+    if (!stream) return;
+    
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) return;
+
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+    analyser.fftSize = 256;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    let animationId;
+    const checkVolume = () => {
+      analyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+      const average = sum / bufferLength;
+      setIsSpeaking(average > 30);
+      animationId = requestAnimationFrame(checkVolume);
+    };
+    checkVolume();
+
+    return () => {
+      cancelAnimationFrame(animationId);
+      audioContext.close();
+    };
   }, [stream]);
 
   return (
-    <div className="video-container">
+    <div className={`video-container ${isSpeaking ? 'active-speaker' : ''}`}>
       <video ref={videoRef} autoPlay playsInline />
       <div className="participant-label">{user?.name || 'Guest'}</div>
     </div>
