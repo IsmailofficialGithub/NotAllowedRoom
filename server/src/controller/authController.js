@@ -1,4 +1,4 @@
-import { hashPassword } from "../lib/hased.js";
+import { hashPassword, comparePassword } from "../lib/hased.js";
 import { pool } from "../config/postgress_db.js";
 import { v4 as uuidv4 } from 'uuid';
 
@@ -16,26 +16,31 @@ export const Register = async (req, res) => {
             hashedPassword,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            isverified: false,
             isActive: true,
             isDeleted: false
         }
-        pool.query("INSERT INTO user_profile (name, email, hashed_password, created_at, updated_at, is_active, is_deleted) VALUES ($1, $2, $3, $4, $5, $6, $7)", [user.name, user.email, user.hashedPassword, user.createdAt, user.updatedAt, user.isActive, user.isDeleted])
-        console.log('User registered successfully');
 
+        const result = await pool.query(
+            "INSERT INTO user_profile (name, email, hashed_password, created_at, updated_at, is_active, is_deleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+            [user.name, user.email, user.hashedPassword, user.createdAt, user.updatedAt, user.isActive, user.isDeleted]
+        );
+
+        console.log('User registered successfully');
 
         res.status(201).json({
             success: true,
             message: "User has been registered",
-            userId: user.id,
+            userId: result.rows[0].id,
             email: user.email,
-            isverified: user.isverified,
             createdAt: user.createdAt,
             updatedAt: user.updatedAt,
             isActive: user.isActive,
         });
     } catch (error) {
         console.log(error);
+        if (error.code === '23505') {
+            return res.status(409).json({ message: "Email already exists" });
+        }
         res.status(500).json({ message: "Internal server error" });
     }
 }
@@ -48,7 +53,6 @@ export const login = async (req, res) => {
         }
 
         const user = await pool.query("SELECT * FROM user_profile WHERE email = $1", [email]);
-        console.log(user);
         if (user.rows.length === 0) {
             return res.status(404).json({ message: "User not found" });
         }
@@ -67,9 +71,13 @@ export const login = async (req, res) => {
             is_active: true,
             is_deleted: false
         }
-        pool.query("INSERT INTO auth_session (user_id, session_token, created_at, updated_at, is_active, is_deleted) VALUES ($1, $2, $3, $4, $5, $6)", [session.user_id, session.session_token, session.created_at, session.updated_at, session.is_active, session.is_deleted])
-        console.log('User logged in successfully');
 
+        await pool.query(
+            "INSERT INTO auth_session (user_id, session_token, created_at, updated_at, is_active, is_deleted) VALUES ($1, $2, $3, $4, $5, $6)",
+            [session.user_id, session.session_token, session.created_at, session.updated_at, session.is_active, session.is_deleted]
+        );
+
+        console.log('User logged in successfully');
 
         res.status(200).json({
             success: true,
@@ -107,18 +115,19 @@ export const refreshtoken = async (req, res) => {
             is_active: true,
             is_deleted: false
         }
-        pool.query("INSERT INTO auth_session (user_id, session_token, created_at, updated_at, is_active, is_deleted) VALUES ($1, $2, $3, $4, $5, $6)", [session.user_id, session.session_token, session.created_at, session.updated_at, session.is_active, session.is_deleted])
-        console.log('User logged in successfully');
 
+        await pool.query(
+            "INSERT INTO auth_session (user_id, session_token, created_at, updated_at, is_active, is_deleted) VALUES ($1, $2, $3, $4, $5, $6)",
+            [session_data.user_id, session_data.session_token, session_data.created_at, session_data.updated_at, session_data.is_active, session_data.is_deleted]
+        );
+
+        console.log('Token refreshed successfully');
 
         res.status(200).json({
             success: true,
-            message: "User logged in successfully",
+            message: "Token refreshed successfully",
             userId: session.rows[0].user_id,
-            email: session.rows[0].email,
-            createdAt: session.rows[0].created_at,
-            updatedAt: session.rows[0].updated_at,
-            isActive: session.rows[0].is_active,
+            sessionToken: sessionToken
         });
     } catch (error) {
         console.log(error);
