@@ -1,5 +1,5 @@
-import { hashPassword } from "../lib/hased";
-import { pool } from "../config/postgress_db";
+import { hashPassword } from "../lib/hased.js";
+import { pool } from "../config/postgress_db.js";
 import { v4 as uuidv4 } from 'uuid';
 
 export const Register = async (req, res) => {
@@ -16,18 +16,20 @@ export const Register = async (req, res) => {
             hashedPassword,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
+            isverified: false,
             isActive: true,
             isDeleted: false
         }
-        pool.query("INSERT INTO user_profile (name, email, hashed_password, createdAt, updatedAt, isActive, isDeleted) VALUES ($1, $2, $3, $4, $5, $6, $7)", [user.name, user.email, user.hashedPassword, user.createdAt, user.updatedAt, user.isActive, user.isDeleted])
+        pool.query("INSERT INTO user_profile (name, email, hashed_password, created_at, updated_at, is_active, is_deleted) VALUES ($1, $2, $3, $4, $5, $6, $7)", [user.name, user.email, user.hashedPassword, user.createdAt, user.updatedAt, user.isActive, user.isDeleted])
         console.log('User registered successfully');
 
 
         res.status(201).json({
             success: true,
-            message: "Room has been genereated",
+            message: "User has been registered",
             userId: user.id,
             email: user.email,
+            isverified: user.isverified,
             createdAt: user.createdAt,
             updatedAt: user.updatedAt,
             isActive: user.isActive,
@@ -46,6 +48,7 @@ export const login = async (req, res) => {
         }
 
         const user = await pool.query("SELECT * FROM user_profile WHERE email = $1", [email]);
+        console.log(user);
         if (user.rows.length === 0) {
             return res.status(404).json({ message: "User not found" });
         }

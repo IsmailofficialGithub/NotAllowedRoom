@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS rooms(
     id serial primary key,
-    host_id UUID NOT NULL,
+    host_id INTEGER NOT NULL,
     room_name VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS rooms(
     is_deleted BOOLEAN DEFAULT FALSE,
     end_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (host_id, temp_id) REFERENCES user_profile(id, user_tempeorary_id)
+    FOREIGN KEY (host_id) REFERENCES user_profile(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_rooms_host_id ON rooms(host_id);

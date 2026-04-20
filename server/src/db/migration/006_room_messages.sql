@@ -1,11 +1,11 @@
 CREATE TABLE IF NOT EXISTS room_messages(
     id serial primary key,
-    room_id UUID NOT NULL,
-    user_id UUID NOT NULL,
+    room_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
     message TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (room_id) REFERENCES room(id) ON DELETE CASCADE,
+    FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES user_profile(id) ON DELETE CASCADE
 );
 
