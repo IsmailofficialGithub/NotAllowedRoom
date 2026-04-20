@@ -27,6 +27,8 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
 
   const hasJoinedCall = useRef(false);
 
+  const localStreamRef = useRef(null);
+
   useEffect(() => {
     const init = async () => {
       if (hasJoinedCall.current) return;
@@ -53,31 +55,33 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
       socket.off('user_left_call');
       
       // Cleanup streams and peers
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
       }
       Object.values(peersRef.current).forEach(peer => peer.close());
       peersRef.current = {};
     };
-  }, []);
+  }, [socket, roomId]);
 
   const startLocalStream = async () => {
     try {
+      console.log('📹 Requesting media devices...');
       const stream = await navigator.mediaDevices.getUserMedia({
         video: initialVideo,
         audio: true
       });
       setLocalStream(stream);
+      localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
       return stream;
     } catch (err) {
       console.error('Error accessing media devices:', err);
-      // Fallback: try audio only if video fails
       try {
         const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         setLocalStream(audioStream);
+        localStreamRef.current = audioStream;
         setIsCameraOff(true);
         return audioStream;
       } catch (audioErr) {
@@ -88,18 +92,22 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   };
 
   // Add tracks to a peer. Helper function to ensure consistency.
-  const addTracksToPeer = (peer, stream) => {
-    if (!stream) return;
-    console.log(`📤 Adding tracks to peer...`);
+  const addTracksToPeer = (peer) => {
+    const stream = localStreamRef.current;
+    if (!stream) {
+      console.warn('⚠️ Cannot add tracks: No local stream available in Ref');
+      return;
+    }
+    
+    console.log(`📤 Adding ${stream.getTracks().length} tracks to peer...`);
     stream.getTracks().forEach(track => {
       peer.addTrack(track, stream);
     });
   };
 
-  const createPeer = (targetSocketId, user, isInitiator, streamToUse) => {
-    // DON'T create a new peer if one already exists for this ID
+  const createPeer = (targetSocketId, user, isInitiator) => {
     if (peersRef.current[targetSocketId]) {
-      console.warn(`⚠️ Peer for ${targetSocketId} already exists. Ignoring duplicate creation.`);
+      console.warn(`⚠️ Peer for ${targetSocketId} already exists.`);
       return peersRef.current[targetSocketId];
     }
 
@@ -117,7 +125,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
     };
 
     peer.ontrack = (event) => {
-      console.log(`📥 Received track from ${targetSocketId}`, event.streams);
+      console.log(`📥 Received remote track from ${targetSocketId}`, event.streams);
       const [remoteStream] = event.streams;
       setRemoteStreams(prev => ({
         ...prev,
@@ -125,11 +133,12 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
       }));
     };
 
-    // Use provided stream or current state
-    const stream = streamToUse || localStream;
-    if (stream) {
-      addTracksToPeer(peer, stream);
-    }
+    peer.oniceconnectionstatechange = () => {
+      console.log(`🧊 ICE State for ${targetSocketId}: ${peer.iceConnectionState}`);
+    };
+
+    // Always add local tracks
+    addTracksToPeer(peer);
 
     if (isInitiator) {
       peer.createOffer({
@@ -152,8 +161,8 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   };
 
   const handleUserJoined = ({ socket_id, user }) => {
+    if (socket_id === socket.id) return;
     console.log(`👤 New user joined call: ${socket_id}`);
-    if (socket_id === socket.id) return; // Don't connect to self
     createPeer(socket_id, user, true);
   };
 
@@ -171,7 +180,6 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
         await peer.setLocalDescription(answer);
         socket.emit('call_signal', { to: from, signal: peer.localDescription });
 
-        // Process buffered candidates for this peer
         if (candidateQueue.current[from]) {
           console.log(`📦 Processing ${candidateQueue.current[from].length} buffered candidates for ${from}`);
           for (const candidate of candidateQueue.current[from]) {
@@ -186,7 +194,6 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
         if (peer && peer.remoteDescription) {
           await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
         } else {
-          // Buffer candidate
           if (!candidateQueue.current[from]) candidateQueue.current[from] = [];
           candidateQueue.current[from].push(signal.candidate);
         }
@@ -210,8 +217,8 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   };
 
   const toggleMute = () => {
-    if (localStream) {
-      localStream.getAudioTracks().forEach(track => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(track => {
         track.enabled = !track.enabled;
       });
       setIsMuted(!isMuted);
@@ -219,8 +226,8 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   };
 
   const toggleCamera = () => {
-    if (localStream) {
-      localStream.getVideoTracks().forEach(track => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach(track => {
         track.enabled = !track.enabled;
       });
       setIsCameraOff(!isCameraOff);
