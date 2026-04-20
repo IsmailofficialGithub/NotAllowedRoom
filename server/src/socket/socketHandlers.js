@@ -26,25 +26,28 @@ export const registerSocketHandlers = (io, socket) => {
                 }
 
                 
-                // Notify others that someone left the room page
-                io.to(`room_${roomId}`).emit('participant_left', { 
-                    user_id: userId, 
-                    guest_id: pGuestId 
-                });
-
-                // 3. BROADCAST NEW COUNT TO DASHBOARD
                 const countResult = await pool.query(
                     "SELECT COUNT(id) FROM participants WHERE room_id = $1 AND is_removed = false",
                     [roomId]
                 );
+                
+                const currentCount = parseInt(countResult.rows[0].count);
+                console.log(`📢 Broadcasting count ${currentCount} for room ${roomId} to all clients`);
                 io.emit('participant_count_updated', {
                     room_id: parseInt(roomId),
-                    participant_count: parseInt(countResult.rows[0].count)
+                    participant_count: currentCount
                 });
 
-                console.log(`👋 Participant removed from room_${roomId}. New count broadcasted.`);
+                // Notify others in the specific room about the specific person leaving
+                console.log(`📢 Notifying room_${roomId} about participant exit: User:${userId} Guest:${pGuestId}`);
+                io.to(`room_${parseInt(roomId)}`).emit('participant_left', { 
+                    user_id: userId, 
+                    guest_id: pGuestId 
+                });
+
+                console.log(`👋 Participant removed from room_${roomId}. Broadcasts complete.`);
             } catch (err) {
-                console.error('Error removing participant:', err.message);
+                console.error('Error in handleParticipantLeave:', err);
             }
         }
     };

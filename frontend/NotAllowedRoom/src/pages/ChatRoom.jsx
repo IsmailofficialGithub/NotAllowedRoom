@@ -41,6 +41,23 @@ const ChatRoom = () => {
   const messagesEndRef = useRef(null);
   const hasJoined = useRef(false);
   const prevRoomId = useRef(id);
+  const currentRoomInfo = useRef({ id, guestId });
+
+  // Update ref whenever they change
+  useEffect(() => {
+    currentRoomInfo.current = { id, guestId };
+  }, [id, guestId]);
+
+  // Handle Unmount specifically for Navigation (Back button, etc)
+  useEffect(() => {
+    return () => {
+      const { id: leaveId, guestId: leaveGuestId } = currentRoomInfo.current;
+      if (socket) {
+        console.log(`👋 Component Unmounting: Sending leave_room for room_${leaveId}`);
+        socket.emit('leave_room', { room_id: leaveId, guest_id: leaveGuestId });
+      }
+    };
+  }, [socket]); // Only depends on socket instance
 
   // 1. Handle joining the room (once per room id)
   useEffect(() => {
