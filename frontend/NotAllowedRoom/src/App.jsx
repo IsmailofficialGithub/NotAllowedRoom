@@ -42,7 +42,7 @@ const App = () => {
               <Route 
                 path="/" 
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowGuest={true}>
                     <Home />
                   </ProtectedRoute>
                 } 

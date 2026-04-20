@@ -30,6 +30,11 @@ app.get('/', (req, res) => {
     res.send('Hello World!');
 });
 
+app.use((req, res, next) => {
+    req.io = io;
+    next();
+});
+
 app.use('/api/v1/rooms', roomRoutes);
 app.use('/api/v1/auth', authRoutes);
 

@@ -15,15 +15,21 @@ export const CreateRoom = async (req, res) => {
             [userId, room_name, now, now, true, false, is_private || false, room_password || null]
         );
 
-        console.log('Room Created successfully');
+        const roomData = {
+            ...result.rows[0],
+            host_name: req.user.name,
+            participant_count: 0
+        };
+
+        // Realtime broadcast for public rooms
+        if (!is_private && req.io) {
+            req.io.emit('room_created', roomData);
+        }
 
         res.status(201).json({
             success: true,
             message: "Room created successfully",
-            room: {
-                ...result.rows[0],
-                host_name: req.user.name
-            }
+            room: roomData
         });
     } catch (error) {
         console.log(error);
@@ -72,6 +78,11 @@ export const DeleteRoom = async (req, res) => {
 
         if (result.rowCount === 0) {
             return res.status(404).json({ message: "Room not found or unauthorized" });
+        }
+
+        // Realtime broadcast for deletion
+        if (req.io) {
+            req.io.emit('room_deleted', id);
         }
 
         res.status(200).json({

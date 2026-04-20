@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
 import { 
+  LogIn,
   Plus, 
   Users, 
   LogOut, 
@@ -15,8 +16,11 @@ import {
   Lock
 } from 'lucide-react';
 
+import { useSocket } from '../context/SocketContext';
+
 const Home = () => {
   const [rooms, setRooms] = useState([]);
+  const socket = useSocket();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,6 +34,27 @@ const Home = () => {
   useEffect(() => {
     fetchRooms();
   }, []);
+
+  useEffect(() => {
+    if (socket) {
+      socket.on('room_created', (newRoom) => {
+        setRooms(prev => {
+          // Prevent duplicates
+          if (prev.find(r => r.id === newRoom.id)) return prev;
+          return [newRoom, ...prev];
+        });
+      });
+
+      socket.on('room_deleted', (deletedId) => {
+        setRooms(prev => prev.filter(r => r.id !== parseInt(deletedId)));
+      });
+
+      return () => {
+        socket.off('room_created');
+        socket.off('room_deleted');
+      };
+    }
+  }, [socket]);
 
   const [isPrivate, setIsPrivate] = useState(false);
   const [roomPassword, setRoomPassword] = useState('');
@@ -97,15 +122,23 @@ const Home = () => {
       }}>
         <div>
           <h1 className="text-gradient" style={{ fontSize: '2rem', fontWeight: '800' }}>NotAllowedRoom</h1>
-          <p style={{ color: 'var(--text-secondary)' }}>Welcome back, {user?.name}</p>
+          <p style={{ color: 'var(--text-secondary)' }}>
+            {token ? `Welcome back, ${user?.name}` : 'Welcome, Explore public rooms'}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
           <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
             <Plus size={20} /> Create Room
           </button>
-          <button onClick={logout} className="btn btn-secondary">
-            <LogOut size={20} />
-          </button>
+          {token ? (
+            <button onClick={logout} className="btn btn-secondary">
+              <LogOut size={20} />
+            </button>
+          ) : (
+            <button onClick={() => navigate('/login')} className="btn btn-secondary">
+              <LogIn size={20} /> Login
+            </button>
+          )}
         </div>
       </header>
 
