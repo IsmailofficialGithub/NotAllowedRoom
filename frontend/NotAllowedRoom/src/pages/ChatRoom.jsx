@@ -23,11 +23,16 @@ const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
   const [participants, setParticipants] = useState([]);
   const [newMessage, setNewMessage] = useState('');
-  const [roomInfo, setRoomInfo] = useState(null);
   
   // Guest & Privacy States
   const [guestName, setGuestName] = useState(localStorage.getItem('guest_name') || '');
-  const [guestId, setGuestId] = useState(localStorage.getItem('guest_id') || '');
+  const [guestId, setGuestId] = useState(() => {
+    const saved = localStorage.getItem('guest_id');
+    if (saved) return saved;
+    const newId = crypto.randomUUID();
+    localStorage.setItem('guest_id', newId);
+    return newId;
+  });
   const [showGuestPrompt, setShowGuestPrompt] = useState(!token && !localStorage.getItem('guest_name'));
   const [password, setPassword] = useState('');
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
@@ -36,22 +41,21 @@ const ChatRoom = () => {
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    if (!token && !guestId) {
-      const newGuestId = crypto.randomUUID();
-      setGuestId(newGuestId);
-      localStorage.setItem('guest_id', newGuestId);
-    }
-  }, [token]);
-
-  useEffect(() => {
     if (showGuestPrompt || showPasswordPrompt) return;
 
     fetchRoomData();
     if (socket) {
-      socket.emit('join_room', id);
+      socket.emit('join_room', { room_id: id, guest_id: guestId });
       
       socket.on('receive_message', (message) => {
         setMessages(prev => [...prev, message]);
+      });
+
+      socket.on('participant_left', (data) => {
+        setParticipants(prev => prev.filter(p => 
+          (data.user_id && p.user_id !== data.user_id) || 
+          (data.guest_id && p.user_tempeorary_id !== data.guest_id)
+        ));
       });
 
       socket.on('error', (err) => {
@@ -252,7 +256,7 @@ const ChatRoom = () => {
             
             return (
               <motion.div
-                key={msg.id || index}
+                key={`${msg.id || 'msg'}-${index}`}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 style={{

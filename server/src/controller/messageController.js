@@ -42,9 +42,11 @@ export const GetMessages = async (req, res) => {
         const { room_id } = req.params;
         
         const result = await pool.query(
-            `SELECT m.*, u.name as user_name 
+            `SELECT m.*, 
+                    COALESCE(p.name, u.name, 'Unknown') as user_name 
              FROM room_messages m 
-             JOIN user_profile u ON m.user_id = u.id 
+             LEFT JOIN user_profile u ON m.user_id = u.id 
+             LEFT JOIN participants p ON (m.user_id = p.user_id OR m.user_tempeorary_id = p.user_tempeorary_id) AND m.room_id = p.room_id
              WHERE m.room_id = $1 
              ORDER BY m.created_at ASC`,
             [room_id]

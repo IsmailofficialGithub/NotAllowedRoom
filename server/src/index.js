@@ -72,22 +72,31 @@ io.use(async (socket, next) => {
 
 // Socket.io Logic
 io.on('connection', (socket) => {
-    console.log(`⚡ Authenticated user connected: ${socket.data.user.name} (${socket.id})`);
+    console.log(`⚡ Authenticated user connected: ${socket.data.user?.name || 'Guest'} (${socket.id})`);
 
-    // Join a specific room group
-    socket.on('join_room', (roomId) => {
+    // Handle joining a room
+    socket.on('join_room', (data) => {
+        const roomId = typeof data === 'string' ? data : data.room_id;
+        const guestId = typeof data === 'object' ? data.guest_id : null;
+        
         socket.join(`room_${roomId}`);
+        socket.data.room_id = roomId;
+        if (guestId) socket.data.guest_id = guestId;
+
         console.log(`👥 User ${socket.id} joined room_${roomId}`);
     });
 
     // Handle real-time messaging
     socket.on('send_message', async (data) => {
         const { room_id, message, guest_id, guest_name } = data;
-        const user = socket.data.user; // Verified user from middleware
+        const user = socket.data.user; 
         
         const userId = user?.user_id || null;
         const pName = user?.name || guest_name;
-        const pGuestId = userId ? null : guest_id;
+        const pGuestId = userId ? null : (guest_id || socket.data.guest_id);
+
+        // Store guest_id for disconnect cleanup if not already set
+        if (pGuestId && !socket.data.guest_id) socket.data.guest_id = pGuestId;
 
         try {
             // Security Check: Verify user or guest is a participant of this room
@@ -113,7 +122,7 @@ io.on('connection', (socket) => {
                 message,
                 user_name: pName,
                 user_id: userId,
-                guest_id: pGuestId,
+                user_tempeorary_id: pGuestId,
                 timestamp: now
             });
             
@@ -124,7 +133,32 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('disconnect', () => {
+    // Handle disconnection - Remove from room database
+    socket.on('disconnect', async () => {
+        const roomId = socket.data.room_id;
+        const user = socket.data.user;
+        const guestId = socket.data.guest_id;
+
+        if (roomId && (user || guestId)) {
+            try {
+                const userId = user?.user_id || null;
+                const pGuestId = userId ? null : guestId;
+
+                await pool.query(
+                    "UPDATE participants SET is_removed = true, removed_at = $1 WHERE room_id = $2 AND (user_id = $3 OR user_tempeorary_id = $4)",
+                    [new Date().toISOString(), roomId, userId, pGuestId]
+                );
+                console.log(`👋 Participant removed from room_${roomId} on disconnect`);
+                
+                // Notify others that participant list changed
+                io.to(`room_${roomId}`).emit('participant_left', { 
+                    user_id: userId, 
+                    guest_id: pGuestId 
+                });
+            } catch (err) {
+                console.error('Error removing participant on disconnect:', err.message);
+            }
+        }
         console.log('👋 User disconnected:', socket.id);
     });
 });
