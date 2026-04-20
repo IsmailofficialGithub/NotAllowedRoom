@@ -11,8 +11,11 @@ import {
   MoreVertical,
   Paperclip,
   Smile,
-  Hash
+  Hash,
+  Phone,
+  Video as VideoIcon
 } from 'lucide-react';
+import CallOverlay from '../components/CallOverlay';
 
 const ChatRoom = () => {
   const { id } = useParams();
@@ -37,6 +40,10 @@ const ChatRoom = () => {
   const [password, setPassword] = useState('');
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
   const [error, setError] = useState('');
+  
+  // Call States
+  const [isInCall, setIsInCall] = useState(false);
+  const [callType, setCallType] = useState(null); // 'audio' or 'video'
 
   const messagesEndRef = useRef(null);
   const hasJoined = useRef(false);
@@ -327,10 +334,39 @@ const ChatRoom = () => {
             </div>
           </div>
         </div>
-        <button className="btn-secondary" style={{ background: 'none', padding: '8px' }}>
-          <MoreVertical size={20} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button 
+            onClick={() => { setCallType('audio'); setIsInCall(true); }}
+            className="btn-secondary" 
+            style={{ background: 'none', padding: '8px', color: 'var(--text-secondary)' }}
+            title="Audio Call"
+          >
+            <Phone size={20} />
+          </button>
+          <button 
+            onClick={() => { setCallType('video'); setIsInCall(true); }}
+            className="btn-secondary" 
+            style={{ background: 'none', padding: '8px', color: 'var(--text-secondary)' }}
+            title="Video Call"
+          >
+            <VideoIcon size={20} />
+          </button>
+          <button className="btn-secondary" style={{ background: 'none', padding: '8px' }}>
+            <MoreVertical size={20} />
+          </button>
+        </div>
       </header>
+
+      {/* WebRTC Call Overlay */}
+      <AnimatePresence>
+        {isInCall && (
+          <CallOverlay 
+            roomId={id} 
+            initialVideo={callType === 'video'}
+            onLeave={() => { setIsInCall(false); setCallType(null); }} 
+          />
+        )}
+      </AnimatePresence>
 
       {/* Messages Area */}
       <div style={{

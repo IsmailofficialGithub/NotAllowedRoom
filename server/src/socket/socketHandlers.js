@@ -121,7 +121,46 @@ export const registerSocketHandlers = (io, socket) => {
         socket.leave(`room_${roomId}`);
     });
 
+    // --- WebRTC Signaling Handlers ---
+    
+    socket.on('join_call', (data) => {
+        const { room_id } = data;
+        const cleanRoomId = parseInt(room_id);
+        console.log(`📞 User [${socket.id}] joined call in room_${cleanRoomId}`);
+        
+        // Notify others that a new user joined the call
+        socket.to(`room_${cleanRoomId}`).emit('user_joined_call', {
+            socket_id: socket.id,
+            user: socket.data.user || { name: `Guest ${socket.id.slice(0, 4)}`, is_guest: true }
+        });
+    });
+
+    socket.on('call_signal', (data) => {
+        const { to, signal, from } = data;
+        console.log(`📡 Relaying signal from [${socket.id}] to [${to}] type: ${signal.type || 'ice-candidate'}`);
+        io.to(to).emit('call_signal', {
+            signal,
+            from: socket.id,
+            user: socket.data.user || { name: `Guest ${socket.id.slice(0, 4)}`, is_guest: true }
+        });
+    });
+
+    socket.on('leave_call', (data) => {
+        const { room_id } = data;
+        const cleanRoomId = parseInt(room_id);
+        console.log(`📵 User [${socket.id}] left call in room_${cleanRoomId}`);
+        socket.to(`room_${cleanRoomId}`).emit('user_left_call', {
+            socket_id: socket.id
+        });
+    });
+
     socket.on('disconnect', async () => {
+        // Notify call participants if they were in a call
+        if (socket.data.room_id) {
+            socket.to(`room_${socket.data.room_id}`).emit('user_left_call', {
+                socket_id: socket.id
+            });
+        }
         await handleParticipantLeave();
         console.log('👋 User disconnected:', socket.id);
     });
