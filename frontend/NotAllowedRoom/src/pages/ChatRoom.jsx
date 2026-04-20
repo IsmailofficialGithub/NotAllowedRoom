@@ -246,37 +246,42 @@ const ChatRoom = () => {
         gap: '16px'
       }}>
         <AnimatePresence>
-          {messages.map((msg, index) => (
-            <motion.div
-              key={msg.id || index}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              style={{
-                alignSelf: msg.user_id === user.id ? 'flex-end' : 'flex-start',
-                maxWidth: '70%',
-              }}
-            >
-              <div style={{ 
-                fontSize: '0.75rem', 
-                color: 'var(--text-dim)', 
-                marginBottom: '4px',
-                textAlign: msg.user_id === user.id ? 'right' : 'left',
-                marginLeft: '8px'
-              }}>
-                {msg.user_name} • {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </div>
-              <div className="glass" style={{
-                padding: '12px 18px',
-                borderRadius: msg.user_id === user.id ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
-                background: msg.user_id === user.id ? 'var(--accent-gradient)' : 'var(--bg-secondary)',
-                color: 'white',
-                border: 'none',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-              }}>
-                {msg.message}
-              </div>
-            </motion.div>
-          ))}
+          {messages.map((msg, index) => {
+            const isOwnMessage = (token && user && msg.user_id === user.id) || 
+                                (!token && guestId && msg.user_tempeorary_id === guestId);
+            
+            return (
+              <motion.div
+                key={msg.id || index}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{
+                  alignSelf: isOwnMessage ? 'flex-end' : 'flex-start',
+                  maxWidth: '70%',
+                }}
+              >
+                <div style={{ 
+                  fontSize: '0.75rem', 
+                  color: 'var(--text-dim)', 
+                  marginBottom: '4px',
+                  textAlign: isOwnMessage ? 'right' : 'left',
+                  marginLeft: '8px'
+                }}>
+                  {msg.user_name} • {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+                <div className="glass" style={{
+                  padding: '12px 18px',
+                  borderRadius: isOwnMessage ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
+                  background: isOwnMessage ? 'var(--accent-gradient)' : 'var(--bg-secondary)',
+                  color: 'white',
+                  border: 'none',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                }}>
+                  {msg.message}
+                </div>
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
         <div ref={messagesEndRef} />
       </div>
