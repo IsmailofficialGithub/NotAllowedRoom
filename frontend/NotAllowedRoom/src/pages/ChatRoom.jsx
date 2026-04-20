@@ -25,9 +25,27 @@ const ChatRoom = () => {
   const [newMessage, setNewMessage] = useState('');
   const [roomInfo, setRoomInfo] = useState(null);
   
+  // Guest & Privacy States
+  const [guestName, setGuestName] = useState(localStorage.getItem('guest_name') || '');
+  const [guestId, setGuestId] = useState(localStorage.getItem('guest_id') || '');
+  const [showGuestPrompt, setShowGuestPrompt] = useState(!token && !localStorage.getItem('guest_name'));
+  const [password, setPassword] = useState('');
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [error, setError] = useState('');
+
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
+    if (!token && !guestId) {
+      const newGuestId = crypto.randomUUID();
+      setGuestId(newGuestId);
+      localStorage.setItem('guest_id', newGuestId);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (showGuestPrompt || showPasswordPrompt) return;
+
     fetchRoomData();
     if (socket) {
       socket.emit('join_room', id);
@@ -37,7 +55,9 @@ const ChatRoom = () => {
       });
 
       socket.on('error', (err) => {
-        alert(err);
+        if (err.includes('Unauthorized') || err.includes('password')) {
+           setShowPasswordPrompt(true);
+        }
       });
 
       return () => {
@@ -45,7 +65,7 @@ const ChatRoom = () => {
         socket.off('error');
       };
     }
-  }, [id, socket]);
+  }, [id, socket, showGuestPrompt, showPasswordPrompt]);
 
   useEffect(() => {
     scrollToBottom();
@@ -55,18 +75,52 @@ const ChatRoom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const fetchRoomData = async () => {
+  const fetchRoomData = async (joinPassword = '') => {
     try {
-      const headers = { Authorization: `Bearer ${token}` };
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      
+      // Attempt to join first to verify access
+      const joinRes = await axios.post(`http://localhost:9000/api/v1/rooms/join`, {
+        room_id: id,
+        password: joinPassword || password,
+        guest_name: guestName,
+        guest_id: guestId
+      }, { headers });
+
+      if (joinRes.data.guest_id) {
+        setGuestId(joinRes.data.guest_id);
+        localStorage.setItem('guest_id', joinRes.data.guest_id);
+      }
+
       const [msgRes, partRes] = await Promise.all([
         axios.get(`http://localhost:9000/api/v1/rooms/${id}/messages`, { headers }),
         axios.get(`http://localhost:9000/api/v1/rooms/${id}/participants`, { headers })
       ]);
+      
       setMessages(msgRes.data.data);
       setParticipants(partRes.data.data);
+      setShowPasswordPrompt(false);
+      setError('');
     } catch (error) {
-      console.error('Error fetching room data:', error);
+       if (error.response?.status === 401) {
+         setShowPasswordPrompt(true);
+         if (joinPassword) setError('Invalid room password');
+       }
+       console.error('Error fetching room data:', error);
     }
+  };
+
+  const handleGuestSubmit = (e) => {
+    e.preventDefault();
+    if (guestName.trim()) {
+      localStorage.setItem('guest_name', guestName);
+      setShowGuestPrompt(false);
+    }
+  };
+
+  const handlePasswordSubmit = (e) => {
+    e.preventDefault();
+    fetchRoomData(password);
   };
 
   const handleSendMessage = (e) => {
@@ -75,7 +129,9 @@ const ChatRoom = () => {
 
     socket.emit('send_message', {
       room_id: id,
-      message: newMessage
+      message: newMessage,
+      guest_id: guestId,
+      guest_name: guestName
     });
 
     setNewMessage('');
@@ -88,8 +144,65 @@ const ChatRoom = () => {
       height: '100vh',
       maxWidth: '1200px',
       margin: '0 auto',
-      background: 'var(--bg-primary)'
+      background: 'var(--bg-primary)',
+      position: 'relative'
     }}>
+      {/* Guest Name Prompt */}
+      {showGuestPrompt && (
+        <div style={{ 
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, 
+          zIndex: 100, background: 'var(--bg-primary)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass card" style={{ width: '100%', maxWidth: '350px' }}>
+            <h2 style={{ marginBottom: '16px' }}>Enter your Name</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '0.875rem' }}>Joining as a guest. Your name will be visible to others.</p>
+            <form onSubmit={handleGuestSubmit}>
+              <div className="input-group">
+                <input 
+                  type="text" 
+                  autoFocus
+                  placeholder="Your Name"
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  required
+                />
+              </div>
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '12px' }}>Start Chatting</button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Password Prompt */}
+      {showPasswordPrompt && (
+        <div style={{ 
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, 
+          zIndex: 90, background: 'var(--bg-primary)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass card" style={{ width: '100%', maxWidth: '350px' }}>
+            <h2 style={{ marginBottom: '16px' }}>Private Room</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '0.875rem' }}>This room is restricted. Please enter the password to join.</p>
+            {error && <p style={{ color: 'var(--error)', fontSize: '0.875rem', marginBottom: '12px' }}>{error}</p>}
+            <form onSubmit={handlePasswordSubmit}>
+              <div className="input-group">
+                <input 
+                  type="password" 
+                  autoFocus
+                  placeholder="Room Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '12px' }}>Join Room</button>
+              <button type="button" onClick={() => navigate('/')} className="btn-secondary btn" style={{ width: '100%', marginTop: '12px' }}>Go Back</button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
       {/* Top Bar */}
       <header className="glass" style={{ 
         padding: '16px 24px', 

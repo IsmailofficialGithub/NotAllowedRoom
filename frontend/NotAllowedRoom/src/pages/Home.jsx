@@ -30,6 +30,9 @@ const Home = () => {
     fetchRooms();
   }, []);
 
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [roomPassword, setRoomPassword] = useState('');
+
   const fetchRooms = async () => {
     try {
       const response = await axios.get(API_URL);
@@ -45,11 +48,17 @@ const Home = () => {
     e.preventDefault();
     try {
       const response = await axios.post(`${API_URL}/create`, 
-        { room_name: newRoomName },
+        { 
+          room_name: newRoomName,
+          is_private: isPrivate,
+          room_password: isPrivate ? roomPassword : null
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setRooms([response.data.room, ...rooms]);
       setNewRoomName('');
+      setRoomPassword('');
+      setIsPrivate(false);
       setShowCreateModal(false);
       fetchRooms(); // Refresh the list
     } catch (error) {
@@ -202,6 +211,29 @@ const Home = () => {
                   required
                 />
               </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                <input 
+                  type="checkbox" 
+                  id="isPrivate" 
+                  checked={isPrivate}
+                  onChange={(e) => setIsPrivate(e.target.checked)}
+                />
+                <label htmlFor="isPrivate" style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}>Private Room</label>
+              </div>
+
+              {isPrivate && (
+                <div className="input-group">
+                  <label>Room Password</label>
+                  <input 
+                    type="password" 
+                    placeholder="Optional access password"
+                    value={roomPassword}
+                    onChange={(e) => setRoomPassword(e.target.value)}
+                  />
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
                 <button type="button" onClick={() => setShowCreateModal(false)} className="btn btn-secondary" style={{ flex: 1 }}>
                   Cancel

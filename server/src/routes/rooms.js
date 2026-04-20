@@ -2,7 +2,7 @@ import express from 'express';
 import { CreateRoom, GetRooms, DeleteRoom } from '../controller/roomController.js';
 import { JoinRoom, LeaveRoom, GetParticipants } from '../controller/participantController.js';
 import { SendMessage, GetMessages } from '../controller/messageController.js';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect, optionalProtect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -12,12 +12,12 @@ router.get('/', GetRooms);
 router.delete('/:id', protect, DeleteRoom);
 
 // Participants
-router.post('/join', protect, JoinRoom);
-router.post('/leave', protect, LeaveRoom);
-router.get('/:room_id/participants', protect, GetParticipants);
+router.post('/join', optionalProtect, JoinRoom);
+router.post('/leave', optionalProtect, LeaveRoom);
+router.get('/:room_id/participants', optionalProtect, GetParticipants);
 
 // Messages
-router.post('/message', protect, SendMessage);
-router.get('/:room_id/messages', protect, GetMessages);
+router.post('/message', optionalProtect, SendMessage);
+router.get('/:room_id/messages', optionalProtect, GetMessages);
 
 export default router;

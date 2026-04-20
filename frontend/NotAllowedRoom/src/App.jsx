@@ -9,7 +9,7 @@ import Register from './pages/Register';
 import Home from './pages/Home';
 import ChatRoom from './pages/ChatRoom';
 
-const ProtectedRoute = ({ children }) => {
+const ProtectedRoute = ({ children, allowGuest = false }) => {
   const { token, loading } = useAuth();
   
   if (loading) return (
@@ -25,7 +25,7 @@ const ProtectedRoute = ({ children }) => {
     </div>
   );
   
-  if (!token) return <Navigate to="/login" />;
+  if (!token && !allowGuest) return <Navigate to="/login" />;
   
   return children;
 };
@@ -50,7 +50,7 @@ const App = () => {
               <Route 
                 path="/room/:id" 
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowGuest={true}>
                     <ChatRoom />
                   </ProtectedRoute>
                 } 

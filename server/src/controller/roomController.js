@@ -2,7 +2,7 @@ import { pool } from "../config/postgress_db.js";
 
 export const CreateRoom = async (req, res) => {
     try {
-        const { room_name } = req.body;
+        const { room_name, is_private, room_password } = req.body;
         if (!room_name) {
             return res.status(400).json({ message: "Room name is required" });
         }
@@ -11,8 +11,8 @@ export const CreateRoom = async (req, res) => {
         const now = new Date().toISOString();
 
         const result = await pool.query(
-            "INSERT INTO rooms (host_id, room_name, created_at, updated_at, is_active, is_deleted) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-            [userId, room_name, now, now, true, false]
+            "INSERT INTO rooms (host_id, room_name, created_at, updated_at, is_active, is_deleted, is_private, room_password) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+            [userId, room_name, now, now, true, false, is_private || false, room_password || null]
         );
 
         console.log('Room Created successfully');
@@ -22,7 +22,7 @@ export const CreateRoom = async (req, res) => {
             message: "Room created successfully",
             room: {
                 ...result.rows[0],
-                host_name: req.user.name // Add host name for the UI
+                host_name: req.user.name
             }
         });
     } catch (error) {
@@ -37,7 +37,7 @@ export const GetRooms = async (req, res) => {
             `SELECT r.*, u.name as host_name 
              FROM rooms r 
              JOIN user_profile u ON r.host_id = u.id 
-             WHERE r.is_active = true AND r.is_deleted = false 
+             WHERE r.is_active = true AND r.is_deleted = false AND r.is_private = false
              ORDER BY r.created_at DESC`
         );
 
