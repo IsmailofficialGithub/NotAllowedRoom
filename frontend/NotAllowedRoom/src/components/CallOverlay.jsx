@@ -26,9 +26,15 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   };
 
   useEffect(() => {
-    startLocalStream();
+    const init = async () => {
+      const stream = await startLocalStream();
+      if (stream) {
+        console.log('📡 Local stream ready, joining call...');
+        socket.emit('join_call', { room_id: roomId });
+      }
+    };
     
-    socket.emit('join_call', { room_id: roomId });
+    init();
 
     socket.on('user_joined_call', handleUserJoined);
     socket.on('call_signal', handleSignal);
@@ -58,27 +64,33 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
-      
-      // If we already have peers, add tracks to them
-      Object.values(peersRef.current).forEach(peer => {
-        stream.getTracks().forEach(track => peer.addTrack(track, stream));
-      });
+      return stream;
     } catch (err) {
       console.error('Error accessing media devices:', err);
       // Fallback: try audio only if video fails
-      if (initialVideo) {
-        try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          setLocalStream(audioStream);
-          setIsCameraOff(true);
-        } catch (audioErr) {
-          console.error('Failed to access even audio:', audioErr);
-        }
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setLocalStream(audioStream);
+        setIsCameraOff(true);
+        return audioStream;
+      } catch (audioErr) {
+        console.error('Failed to access even audio:', audioErr);
+        return null;
       }
     }
   };
 
-  const createPeer = (targetSocketId, user, isInitiator) => {
+  // Add tracks to a peer. Helper function to ensure consistency.
+  const addTracksToPeer = (peer, stream) => {
+    if (!stream) return;
+    console.log(`📤 Adding tracks to peer...`);
+    stream.getTracks().forEach(track => {
+      peer.addTrack(track, stream);
+    });
+  };
+
+  const createPeer = (targetSocketId, user, isInitiator, streamToUse) => {
+    console.log(`🤝 Creating peer connection for ${targetSocketId} (Initiator: ${isInitiator})`);
     const peer = new RTCPeerConnection(iceServers);
     peersRef.current[targetSocketId] = peer;
 
@@ -92,7 +104,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
     };
 
     peer.ontrack = (event) => {
-      console.log(`📥 Received track from ${targetSocketId}`);
+      console.log(`📥 Received track from ${targetSocketId}`, event.streams);
       const [remoteStream] = event.streams;
       setRemoteStreams(prev => ({
         ...prev,
@@ -100,9 +112,10 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
       }));
     };
 
-    // Add local tracks if available
-    if (localStream) {
-      localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+    // Use provided stream or current state
+    const stream = streamToUse || localStream;
+    if (stream) {
+      addTracksToPeer(peer, stream);
     }
 
     if (isInitiator) {
@@ -112,6 +125,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
       }).then(offer => {
         return peer.setLocalDescription(offer);
       }).then(() => {
+        console.log(`📤 Sending offer to ${targetSocketId}`);
         socket.emit('call_signal', {
           to: targetSocketId,
           signal: peer.localDescription
@@ -123,24 +137,43 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   };
 
   const handleUserJoined = ({ socket_id, user }) => {
-    console.log(`👤 User joined call: ${socket_id}`);
+    console.log(`👤 New user joined call: ${socket_id}`);
     createPeer(socket_id, user, true);
   };
+
+  const candidateQueue = useRef({}); // { fromSocketId: [candidates] }
 
   const handleSignal = async ({ signal, from, user }) => {
     let peer = peersRef.current[from];
 
     try {
       if (signal.type === 'offer') {
+        console.log(`📥 Received offer from ${from}`);
         if (!peer) peer = createPeer(from, user, false);
         await peer.setRemoteDescription(new RTCSessionDescription(signal));
         const answer = await peer.createAnswer();
         await peer.setLocalDescription(answer);
         socket.emit('call_signal', { to: from, signal: peer.localDescription });
+
+        // Process buffered candidates for this peer
+        if (candidateQueue.current[from]) {
+          console.log(`📦 Processing ${candidateQueue.current[from].length} buffered candidates for ${from}`);
+          for (const candidate of candidateQueue.current[from]) {
+            await peer.addIceCandidate(new RTCIceCandidate(candidate));
+          }
+          delete candidateQueue.current[from];
+        }
       } else if (signal.type === 'answer') {
+        console.log(`📥 Received answer from ${from}`);
         if (peer) await peer.setRemoteDescription(new RTCSessionDescription(signal));
       } else if (signal.type === 'ice-candidate') {
-        if (peer) await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        if (peer && peer.remoteDescription) {
+          await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        } else {
+          // Buffer candidate
+          if (!candidateQueue.current[from]) candidateQueue.current[from] = [];
+          candidateQueue.current[from].push(signal.candidate);
+        }
       }
     } catch (err) {
       console.error('Error handling signaling:', err);
