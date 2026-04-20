@@ -9,28 +9,23 @@ export const SocketProvider = ({ children }) => {
   const { token, user } = useAuth();
 
   useEffect(() => {
-    if (token) {
-      const newSocket = io('http://localhost:9000', {
-        auth: { token }
-      });
+    const newSocket = io('http://localhost:9000', {
+      auth: { token }
+    });
 
-      newSocket.on('connect', () => {
-        console.log('⚡ Connected to Socket server');
-      });
+    newSocket.on('connect', () => {
+      console.log('⚡ Connected to Socket server');
+    });
 
-      newSocket.on('connect_error', (err) => {
-        console.error('❌ Socket connection error:', err.message);
-      });
+    newSocket.on('connect_error', (err) => {
+      console.error('❌ Socket connection error:', err.message);
+    });
 
-      setSocket(newSocket);
+    setSocket(newSocket);
 
-      return () => newSocket.close();
-    } else {
-      if (socket) {
-        socket.close();
-        setSocket(null);
-      }
-    }
+    return () => {
+      newSocket.close();
+    };
   }, [token]);
 
   return (
