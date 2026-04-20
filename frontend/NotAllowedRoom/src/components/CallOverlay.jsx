@@ -26,18 +26,25 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   };
 
   const hasJoinedCall = useRef(false);
-
+  const isInitializing = useRef(false);
   const localStreamRef = useRef(null);
 
   useEffect(() => {
     const init = async () => {
-      if (hasJoinedCall.current) return;
+      if (hasJoinedCall.current || isInitializing.current) return;
+      isInitializing.current = true;
       
-      const stream = await startLocalStream();
-      if (stream && !hasJoinedCall.current) {
-        hasJoinedCall.current = true;
-        console.log('📡 Local stream ready, joining call...');
-        socket.emit('join_call', { room_id: roomId });
+      try {
+        const stream = await startLocalStream();
+        if (stream && !hasJoinedCall.current) {
+          hasJoinedCall.current = true;
+          console.log('📡 Local stream ready, joining call...');
+          socket.emit('join_call', { room_id: roomId });
+        }
+      } catch (err) {
+        console.error('Initial sequence failed:', err);
+      } finally {
+        isInitializing.current = false;
       }
     };
     
