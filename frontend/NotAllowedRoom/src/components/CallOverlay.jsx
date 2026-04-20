@@ -234,6 +234,49 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
     }
   };
 
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // Audio analysis for local stream
+  useEffect(() => {
+    if (!localStream) return;
+    
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(localStream);
+    source.connect(analyser);
+    analyser.fftSize = 256;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    let animationFrameId;
+    let speakingTimeout;
+
+    const checkLevel = () => {
+      analyser.getByteFrequencyData(dataArray);
+      let values = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        values += dataArray[i];
+      }
+      const average = values / bufferLength;
+      
+      if (average > 30) { // Speech threshold
+        if (!isSpeaking) setIsSpeaking(true);
+        clearTimeout(speakingTimeout);
+        speakingTimeout = setTimeout(() => setIsSpeaking(false), 1000);
+      }
+      
+      animationFrameId = requestAnimationFrame(checkLevel);
+    };
+
+    checkLevel();
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      clearTimeout(speakingTimeout);
+      audioContext.close();
+    };
+  }, [localStream]);
+
   const numRemotes = Object.keys(remoteStreams).length;
 
   return (
@@ -308,7 +351,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
             layout
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="video-stage glass-premium"
+            className={`video-stage glass-premium ${isSpeaking ? 'speaking-glow' : ''}`}
           >
             <video 
               ref={localVideoRef} 
@@ -335,7 +378,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
 
           {/* Remote Streams Containers */}
           {Object.entries(remoteStreams).map(([id, { stream, user }]) => (
-            <RemoteVideo key={id} stream={stream} user={user} />
+            <RemoteVideo key={id} socketId={id} stream={stream} user={user} />
           ))}
         </AnimatePresence>
       </div>
@@ -384,6 +427,11 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
           overflow: hidden;
           position: relative;
           aspect-ratio: 16/9;
+          transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        .speaking-glow {
+          border-color: #6366f1 !important;
+          box-shadow: 0 0 30px rgba(99, 102, 241, 0.4), 0 20px 50px rgba(0,0,0,0.4) !important;
         }
         .video-meta {
           position: absolute;
@@ -501,12 +549,61 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   );
 };
 
-const RemoteVideo = ({ stream, user }) => {
+const RemoteVideo = ({ stream, user, socketId }) => {
   const videoRef = useRef();
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  // Audio analysis for remote stream
+  useEffect(() => {
+    if (!stream) return;
+    
+    // Check if there is an audio track
+    if (stream.getAudioTracks().length === 0) return;
+
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      analyser.fftSize = 256;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      let animationFrameId;
+      let speakingTimeout;
+
+      const checkLevel = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let values = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          values += dataArray[i];
+        }
+        const average = values / bufferLength;
+        
+        if (average > 30) {
+          if (!isSpeaking) setIsSpeaking(true);
+          clearTimeout(speakingTimeout);
+          speakingTimeout = setTimeout(() => setIsSpeaking(false), 1000);
+        }
+        
+        animationFrameId = requestAnimationFrame(checkLevel);
+      };
+
+      checkLevel();
+
+      return () => {
+        cancelAnimationFrame(animationFrameId);
+        clearTimeout(speakingTimeout);
+        audioContext.close();
+      };
+    } catch (err) {
+      console.warn("Audio analysis blocked or failed for remote stream:", err);
     }
   }, [stream]);
 
@@ -515,7 +612,7 @@ const RemoteVideo = ({ stream, user }) => {
       layout
       initial={{ scale: 0.9, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
-      className="video-stage glass-premium"
+      className={`video-stage glass-premium ${isSpeaking ? 'speaking-glow' : ''}`}
     >
       <video 
         ref={videoRef} 
