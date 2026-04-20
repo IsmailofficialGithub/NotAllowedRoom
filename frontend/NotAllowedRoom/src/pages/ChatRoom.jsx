@@ -65,7 +65,10 @@ const ChatRoom = () => {
       });
 
       return () => {
+        // Notify server we are leaving manually
+        socket.emit('leave_room', { room_id: id, guest_id: guestId });
         socket.off('receive_message');
+        socket.off('participant_left');
         socket.off('error');
       };
     }

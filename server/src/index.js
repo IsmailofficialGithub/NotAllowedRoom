@@ -91,7 +91,7 @@ io.on('connection', (socket) => {
         const { room_id, message, guest_id, guest_name } = data;
         const user = socket.data.user; 
         
-        const userId = user?.user_id || null;
+        const userId = user?.id || null;
         const pName = user?.name || guest_name;
         const pGuestId = userId ? null : (guest_id || socket.data.guest_id);
 
@@ -133,32 +133,44 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Handle disconnection - Remove from room database
-    socket.on('disconnect', async () => {
-        const roomId = socket.data.room_id;
+    // Helper to remove participant and notify others
+    const handleParticipantLeave = async (customRoomId, customGuestId) => {
+        const roomId = customRoomId || socket.data.room_id;
         const user = socket.data.user;
-        const guestId = socket.data.guest_id;
+        const guestId = customGuestId || socket.data.guest_id;
 
         if (roomId && (user || guestId)) {
             try {
-                const userId = user?.user_id || null;
+                const userId = user?.id || null;
                 const pGuestId = userId ? null : guestId;
 
                 await pool.query(
                     "UPDATE participants SET is_removed = true, removed_at = $1 WHERE room_id = $2 AND (user_id = $3 OR user_tempeorary_id = $4)",
                     [new Date().toISOString(), roomId, userId, pGuestId]
                 );
-                console.log(`👋 Participant removed from room_${roomId} on disconnect`);
                 
-                // Notify others that participant list changed
+                // Notify others
                 io.to(`room_${roomId}`).emit('participant_left', { 
                     user_id: userId, 
                     guest_id: pGuestId 
                 });
+                console.log(`👋 Participant removed from room_${roomId}`);
             } catch (err) {
-                console.error('Error removing participant on disconnect:', err.message);
+                console.error('Error removing participant:', err.message);
             }
         }
+    };
+
+    socket.on('leave_room', (data) => {
+        const roomId = data?.room_id || socket.data.room_id;
+        const guestId = data?.guest_id || socket.data.guest_id;
+        handleParticipantLeave(roomId, guestId);
+        socket.leave(`room_${roomId}`);
+    });
+
+    // Handle disconnection - Remove from room database
+    socket.on('disconnect', async () => {
+        await handleParticipantLeave();
         console.log('👋 User disconnected:', socket.id);
     });
 });

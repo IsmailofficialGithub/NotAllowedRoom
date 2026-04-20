@@ -20,7 +20,7 @@ export const JoinRoom = async (req, res) => {
 
         const room = roomResult.rows[0];
         const now = new Date().toISOString();
-        let userId = req.user?.user_id || null;
+        let userId = req.user?.id || null;
         let pName = req.user?.name || guest_name;
         let pEmail = req.user?.email || null;
         let pGuestId = userId ? null : (guest_id || uuidv4());
@@ -29,21 +29,31 @@ export const JoinRoom = async (req, res) => {
             return res.status(400).json({ message: "Name is required for guest access" });
         }
 
-        // 2. Check if already in room (prevent duplicates & bypass password for existing members)
+        // 2. Check if already in room or was previously a member
         const existing = await pool.query(
-            "SELECT id FROM participants WHERE room_id = $1 AND (user_id = $2 OR user_tempeorary_id = $3) AND is_removed = false",
+            "SELECT id, is_removed FROM participants WHERE room_id = $1 AND (user_id = $2 OR user_tempeorary_id = $3)",
             [room_id, userId, pGuestId]
         );
 
         if (existing.rows.length > 0) {
+            const participant = existing.rows[0];
+            
+            // If they were previously removed, reactivate them
+            if (participant.is_removed) {
+                await pool.query(
+                    "UPDATE participants SET is_removed = false, removed_at = null, updated_at = $1 WHERE id = $2",
+                    [now, participant.id]
+                );
+            }
+
             return res.status(200).json({ 
-                message: "Already joined", 
-                participantId: existing.rows[0].id,
+                message: "Joined successfully", 
+                participantId: participant.id,
                 guest_id: pGuestId 
             });
         }
 
-        // 3. Security Check for Private Rooms (Only for new participants)
+        // 3. Security Check for Private Rooms (Only for brand new participants)
         if (room.is_private && room.room_password) {
             if (password !== room.room_password) {
                 return res.status(401).json({ message: "Incorrect room password", is_private: true });

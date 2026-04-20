@@ -7,7 +7,7 @@ export const SendMessage = async (req, res) => {
             return res.status(400).json({ message: "Room ID and message are required" });
         }
 
-        const userId = req.user?.user_id || null;
+        const userId = req.user?.id || null;
         const pGuestId = userId ? null : guest_id;
 
         // Check if user or guest is a participant

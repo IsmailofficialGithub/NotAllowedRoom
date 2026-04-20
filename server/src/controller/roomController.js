@@ -7,7 +7,7 @@ export const CreateRoom = async (req, res) => {
             return res.status(400).json({ message: "Room name is required" });
         }
 
-        const userId = req.user.user_id;
+        const userId = req.user.id;
         const now = new Date().toISOString();
 
         const result = await pool.query(
@@ -33,15 +33,19 @@ export const CreateRoom = async (req, res) => {
 
 export const GetRooms = async (req, res) => {
     try {
-        const userId = req.user?.user_id || null;
+        const userId = req.user?.id || null;
 
         // Show all public rooms + private rooms where current user is the host
         const result = await pool.query(
-            `SELECT r.*, u.name as host_name 
+            `SELECT r.*, 
+                    u.name as host_name,
+                    COUNT(p.id) FILTER (WHERE p.is_removed = false) as participant_count
              FROM rooms r 
              JOIN user_profile u ON r.host_id = u.id 
+             LEFT JOIN participants p ON r.id = p.room_id
              WHERE r.is_active = true AND r.is_deleted = false 
              AND (r.is_private = false OR r.host_id = $1)
+             GROUP BY r.id, u.name
              ORDER BY r.created_at DESC`,
             [userId]
         );
@@ -59,7 +63,7 @@ export const GetRooms = async (req, res) => {
 export const DeleteRoom = async (req, res) => {
     try {
         const { id } = req.params;
-        const userId = req.user.user_id;
+        const userId = req.user.id;
 
         const result = await pool.query(
             "UPDATE rooms SET is_active = false, is_deleted = true, updated_at = $1 WHERE id = $2 AND host_id = $3",

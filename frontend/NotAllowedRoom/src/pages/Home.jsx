@@ -11,7 +11,8 @@ import {
   Search, 
   ArrowRight,
   Hash,
-  Layout
+  Layout,
+  Lock
 } from 'lucide-react';
 
 const Home = () => {
@@ -161,16 +162,33 @@ const Home = () => {
                 }}>
                   <Hash size={24} />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                  <Users size={16} /> {room.participant_count || 0}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {room.is_private && (
+                    <div style={{ 
+                      background: 'rgba(239, 68, 68, 0.1)', 
+                      padding: '4px 8px', 
+                      borderRadius: '6px', 
+                      color: '#ef4444',
+                      fontSize: '0.7rem',
+                      fontWeight: '700',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      <Lock size={12} /> PRIVATE
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                    <Users size={16} /> {room.participant_count || 0}
+                  </div>
                 </div>
               </div>
               <h3 style={{ marginBottom: '8px', fontSize: '1.25rem' }}>{room.room_name}</h3>
               <p style={{ color: 'var(--text-dim)', fontSize: '0.875rem', marginBottom: '20px' }}>
-                Created by {room.host_name === user.name ? 'You' : room.host_name}
+                Host: {room.host_name === user?.name ? 'You' : room.host_name}
               </p>
               <div style={{ display: 'flex', alignItems: 'center', color: 'var(--accent-primary)', fontWeight: '600', gap: '4px' }}>
-                Join Chat <ArrowRight size={16} />
+                Enter Room <ArrowRight size={16} />
               </div>
             </motion.div>
           ))
