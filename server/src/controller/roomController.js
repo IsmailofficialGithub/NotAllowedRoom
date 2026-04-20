@@ -11,7 +11,7 @@ export const CreateRoom = async (req, res) => {
         const now = new Date().toISOString();
 
         const result = await pool.query(
-            "INSERT INTO rooms (host_id, room_name, created_at, updated_at, is_active, is_deleted) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            "INSERT INTO rooms (host_id, room_name, created_at, updated_at, is_active, is_deleted) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
             [userId, room_name, now, now, true, false]
         );
 
@@ -20,8 +20,10 @@ export const CreateRoom = async (req, res) => {
         res.status(201).json({
             success: true,
             message: "Room created successfully",
-            roomId: result.rows[0].id,
-            roomName: room_name
+            room: {
+                ...result.rows[0],
+                host_name: req.user.name // Add host name for the UI
+            }
         });
     } catch (error) {
         console.log(error);

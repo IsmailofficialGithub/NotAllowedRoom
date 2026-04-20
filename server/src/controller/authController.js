@@ -178,3 +178,38 @@ export const logout = async (req, res) => {
         res.status(500).json({ message: "Internal server error" });
     }
 }
+
+
+export const verify_email = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ success: false, message: "Email is required" });
+        }
+
+        const user = await pool.query("SELECT * FROM user_profile WHERE email = $1 AND is_active = true AND is_deleted = false", [email]);
+        if (user.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "User not found or account disabled" });
+        }
+
+        const now = new Date().toISOString();
+
+        await pool.query(
+            "UPDATE user_profile SET isverified = $1, updated_at = $2 WHERE email = $3",
+            [true, now, email]
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Email is valid",
+            userId: user.rows[0].id,
+            email: user.rows[0].email,
+            createdAt: user.rows[0].created_at,
+            updatedAt: user.rows[0].updated_at,
+            isActive: user.rows[0].is_active,
+        });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+}

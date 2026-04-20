@@ -4,7 +4,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import roomRoutes from './routes/rooms.js';
-import connectDB from './config/postgress_db.js';
+import connectDB, { pool } from './config/postgress_db.js';
 import authRoutes from './routes/auth.js';
 
 dotenv.config();
