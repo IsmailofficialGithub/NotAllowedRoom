@@ -33,12 +33,17 @@ export const CreateRoom = async (req, res) => {
 
 export const GetRooms = async (req, res) => {
     try {
+        const userId = req.user?.user_id || null;
+
+        // Show all public rooms + private rooms where current user is the host
         const result = await pool.query(
             `SELECT r.*, u.name as host_name 
              FROM rooms r 
              JOIN user_profile u ON r.host_id = u.id 
-             WHERE r.is_active = true AND r.is_deleted = false AND r.is_private = false
-             ORDER BY r.created_at DESC`
+             WHERE r.is_active = true AND r.is_deleted = false 
+             AND (r.is_private = false OR r.host_id = $1)
+             ORDER BY r.created_at DESC`,
+            [userId]
         );
 
         res.status(200).json({

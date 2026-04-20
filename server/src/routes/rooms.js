@@ -8,7 +8,7 @@ const router = express.Router();
 
 // Room Management
 router.post('/create', protect, CreateRoom);
-router.get('/', GetRooms);
+router.get('/', optionalProtect, GetRooms);
 router.delete('/:id', protect, DeleteRoom);
 
 // Participants

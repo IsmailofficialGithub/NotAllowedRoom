@@ -60,7 +60,9 @@ const Home = () => {
       setRoomPassword('');
       setIsPrivate(false);
       setShowCreateModal(false);
-      fetchRooms(); // Refresh the list
+      
+      // Navigate directly into the new room
+      navigate(`/room/${response.data.room.id}`);
     } catch (error) {
       console.error('Error creating room:', error);
     }
