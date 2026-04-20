@@ -52,13 +52,14 @@ export const registerSocketHandlers = (io, socket) => {
     socket.on('join_room', async (data) => {
         const { room_id, guest_id } = data;
         const cleanRoomId = parseInt(room_id);
+        const cleanGuestId = (guest_id && guest_id !== 'null' && guest_id !== '') ? guest_id : null;
         
         // Store in socket for disconnect handling
         socket.data.room_id = cleanRoomId;
-        socket.data.guest_id = guest_id;
+        socket.data.guest_id = cleanGuestId;
 
         socket.join(`room_${cleanRoomId}`);
-        console.log(`👥 Socket ${socket.id} joined room_${cleanRoomId}`);
+        console.log(`👥 Socket ${socket.id} joined room_${cleanRoomId} as Guest:${cleanGuestId}`);
     });
 
     socket.on('send_message', async (data) => {
@@ -117,4 +118,35 @@ export const registerSocketHandlers = (io, socket) => {
         await handleParticipantLeave();
         console.log('👋 User disconnected:', socket.id);
     });
+};
+
+import { Server } from 'socket.io';
+import jwt from 'jsonwebtoken';
+
+export const setupSocket = (server) => {
+    const io = new Server(server, {
+        cors: {
+            origin: "*",
+            methods: ["GET", "POST"]
+        }
+    });
+
+    io.use((socket, next) => {
+        const token = socket.handshake.auth.token;
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                socket.data.user = decoded;
+            } catch (err) {
+                console.warn('Socket auth failed:', err.message);
+            }
+        }
+        next();
+    });
+
+    io.on('connection', (socket) => {
+        registerSocketHandlers(io, socket);
+    });
+
+    return io;
 };
