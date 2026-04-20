@@ -19,14 +19,6 @@ export const JoinRoom = async (req, res) => {
         }
 
         const room = roomResult.rows[0];
-
-        // 2. Security Check for Private Rooms
-        if (room.is_private && room.room_password) {
-            if (password !== room.room_password) {
-                return res.status(401).json({ message: "Incorrect room password", is_private: true });
-            }
-        }
-
         const now = new Date().toISOString();
         let userId = req.user?.user_id || null;
         let pName = req.user?.name || guest_name;
@@ -37,7 +29,7 @@ export const JoinRoom = async (req, res) => {
             return res.status(400).json({ message: "Name is required for guest access" });
         }
 
-        // 3. Check if already in room (prevent duplicates)
+        // 2. Check if already in room (prevent duplicates & bypass password for existing members)
         const existing = await pool.query(
             "SELECT id FROM participants WHERE room_id = $1 AND (user_id = $2 OR user_tempeorary_id = $3) AND is_removed = false",
             [room_id, userId, pGuestId]
@@ -49,6 +41,13 @@ export const JoinRoom = async (req, res) => {
                 participantId: existing.rows[0].id,
                 guest_id: pGuestId 
             });
+        }
+
+        // 3. Security Check for Private Rooms (Only for new participants)
+        if (room.is_private && room.room_password) {
+            if (password !== room.room_password) {
+                return res.status(401).json({ message: "Incorrect room password", is_private: true });
+            }
         }
 
         const result = await pool.query(
