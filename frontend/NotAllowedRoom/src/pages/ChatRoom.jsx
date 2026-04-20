@@ -44,6 +44,7 @@ const ChatRoom = () => {
   // Call States
   const [isInCall, setIsInCall] = useState(false);
   const [callType, setCallType] = useState(null); // 'audio' or 'video'
+  const [activeCall, setActiveCall] = useState(null); // { participants_count }
 
   const messagesEndRef = useRef(null);
   const hasJoined = useRef(false);
@@ -149,16 +150,39 @@ const ChatRoom = () => {
       ));
     };
 
+    const onCallInProgress = (data) => {
+      console.log("☎️ [Socket] Call in progress notification:", data);
+      setActiveCall(data);
+      
+      // Auto-join if someone else is in a call and we just joined the room
+      // and we are not already in the call
+      if (!isInCall && !showGuestPrompt && !showPasswordPrompt) {
+        console.log("🚀 [Socket] Automatically joining existing call...");
+        setCallType('video');
+        setIsInCall(true);
+      }
+    };
+
+    const onCallEnded = (data) => {
+      console.log("📵 [Socket] Call ended notification:", data);
+      setActiveCall(null);
+      setIsInCall(false);
+    };
+
     socket.on('receive_message', onMessage);
     socket.on('participant_count_updated', onCountUpdate);
     socket.on('participant_left', onParticipantLeft);
+    socket.on('call_in_progress', onCallInProgress);
+    socket.on('call_ended', onCallEnded);
 
     return () => {
       socket.off('receive_message', onMessage);
       socket.off('participant_count_updated', onCountUpdate);
       socket.off('participant_left', onParticipantLeft);
+      socket.off('call_in_progress', onCallInProgress);
+      socket.off('call_ended', onCallEnded);
     };
-  }, [socket, id, guestId, token, guestName, showGuestPrompt, showPasswordPrompt]);
+  }, [socket, id, guestId, token, guestName, showGuestPrompt, showPasswordPrompt, isInCall]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -330,11 +354,23 @@ const ChatRoom = () => {
               <h3 style={{ fontSize: '1.1rem' }}>Room Chat</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                 <Users size={12} /> {participants.length} Active
+                {activeCall && <span style={{ color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '4px' }}> • <VideoIcon size={12}/> Call in progress</span>}
               </div>
             </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {activeCall && !isInCall && (
+            <motion.button
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              onClick={() => { setCallType('video'); setIsInCall(true); }}
+              className="btn btn-primary"
+              style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '12px' }}
+            >
+              Join Call
+            </motion.button>
+          )}
           <button 
             onClick={() => { setCallType('audio'); setIsInCall(true); }}
             className="btn-secondary" 

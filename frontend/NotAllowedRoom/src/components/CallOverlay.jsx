@@ -25,10 +25,15 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
     ]
   };
 
+  const hasJoinedCall = useRef(false);
+
   useEffect(() => {
     const init = async () => {
+      if (hasJoinedCall.current) return;
+      
       const stream = await startLocalStream();
-      if (stream) {
+      if (stream && !hasJoinedCall.current) {
+        hasJoinedCall.current = true;
         console.log('📡 Local stream ready, joining call...');
         socket.emit('join_call', { room_id: roomId });
       }
@@ -41,6 +46,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
     socket.on('user_left_call', handleUserLeft);
 
     return () => {
+      console.log('🚮 Cleaning up call overlay...');
       socket.emit('leave_call', { room_id: roomId });
       socket.off('user_joined_call');
       socket.off('call_signal');
@@ -51,6 +57,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
         localStream.getTracks().forEach(track => track.stop());
       }
       Object.values(peersRef.current).forEach(peer => peer.close());
+      peersRef.current = {};
     };
   }, []);
 
@@ -90,6 +97,12 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   };
 
   const createPeer = (targetSocketId, user, isInitiator, streamToUse) => {
+    // DON'T create a new peer if one already exists for this ID
+    if (peersRef.current[targetSocketId]) {
+      console.warn(`⚠️ Peer for ${targetSocketId} already exists. Ignoring duplicate creation.`);
+      return peersRef.current[targetSocketId];
+    }
+
     console.log(`🤝 Creating peer connection for ${targetSocketId} (Initiator: ${isInitiator})`);
     const peer = new RTCPeerConnection(iceServers);
     peersRef.current[targetSocketId] = peer;
@@ -130,6 +143,8 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
           to: targetSocketId,
           signal: peer.localDescription
         });
+      }).catch(err => {
+        console.error('Failed to create offer:', err);
       });
     }
 
@@ -138,6 +153,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
 
   const handleUserJoined = ({ socket_id, user }) => {
     console.log(`👤 New user joined call: ${socket_id}`);
+    if (socket_id === socket.id) return; // Don't connect to self
     createPeer(socket_id, user, true);
   };
 

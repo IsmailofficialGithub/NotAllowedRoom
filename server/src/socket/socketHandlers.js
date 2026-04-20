@@ -1,5 +1,7 @@
 import { pool } from "../config/postgress_db.js";
 
+const activeCalls = new Map(); // Map<room_id, Set<socket_id>>
+
 export const registerSocketHandlers = (io, socket) => {
     console.log(`⚡ User connected: ${socket.data.user?.name || 'Guest'} (${socket.id})`);
 
@@ -9,47 +11,39 @@ export const registerSocketHandlers = (io, socket) => {
         const user = socket.data.user;
         const guestId = customGuestId || socket.data.guest_id;
 
+        // Cleanup from active calls tracked in memory
+        if (roomId && activeCalls.has(parseInt(roomId))) {
+            activeCalls.get(parseInt(roomId)).delete(socket.id);
+            if (activeCalls.get(parseInt(roomId)).size === 0) {
+                activeCalls.delete(parseInt(roomId));
+            }
+        }
+
         if (roomId && (user || guestId)) {
             try {
                 const userId = user?.id || null;
                 const pGuestId = userId ? null : (guestId && guestId !== 'null' && guestId !== '' ? guestId : null);
                 
-                console.log(`📡 Socket Leave Flow:`);
-                console.log(`   - Room: ${roomId} (${typeof roomId})`);
-                console.log(`   - User: ${userId} (${typeof userId})`);
-                console.log(`   - Guest: ${pGuestId} (${typeof pGuestId})`);
-
                 const updateResult = await pool.query(
                     "UPDATE participants SET is_removed = true, removed_at = $1 WHERE room_id = $2 AND ((user_id = $3 AND $3 IS NOT NULL) OR (user_tempeorary_id = $4 AND $4 IS NOT NULL))",
                     [new Date().toISOString(), roomId, userId, pGuestId]
                 );
 
-                if (updateResult.rowCount === 0) {
-                    console.warn(`⚠️ No participant row updated for exit. (This identity was likely already removed or never existed)`);
-                }
-
-
-                
                 const countResult = await pool.query(
                     "SELECT COUNT(id) FROM participants WHERE room_id = $1 AND is_removed = false",
                     [roomId]
                 );
                 
                 const currentCount = parseInt(countResult.rows[0].count);
-                console.log(`📢 Broadcasting count ${currentCount} for room ${roomId} to all clients`);
                 io.emit('participant_count_updated', {
                     room_id: parseInt(roomId),
                     participant_count: currentCount
                 });
 
-                // Notify others in the specific room about the specific person leaving
-                console.log(`📢 Notifying room_${roomId} about participant exit: User:${userId} Guest:${pGuestId}`);
                 io.to(`room_${parseInt(roomId)}`).emit('participant_left', { 
                     user_id: userId, 
                     guest_id: pGuestId 
                 });
-
-                console.log(`👋 Participant removed from room_${roomId}. Broadcasts complete.`);
             } catch (err) {
                 console.error('Error in handleParticipantLeave:', err);
             }
@@ -61,12 +55,20 @@ export const registerSocketHandlers = (io, socket) => {
         const cleanRoomId = parseInt(room_id);
         const cleanGuestId = (guest_id && guest_id !== 'null' && guest_id !== '') ? guest_id : null;
         
-        // Store in socket for disconnect handling
         socket.data.room_id = cleanRoomId;
         socket.data.guest_id = cleanGuestId;
 
         await socket.join(`room_${cleanRoomId}`);
-        console.log(`👥 Socket [${socket.id}] successfully joined [room_${cleanRoomId}] as Guest:${cleanGuestId}`);
+        console.log(`👥 Socket [${socket.id}] joined [room_${cleanRoomId}]`);
+
+        // Notify if a call is active in this room
+        if (activeCalls.has(cleanRoomId) && activeCalls.get(cleanRoomId).size > 0) {
+            console.log(`📞 Notifying [${socket.id}] about active call in room_${cleanRoomId}`);
+            socket.emit('call_in_progress', {
+                room_id: cleanRoomId,
+                participants_count: activeCalls.get(cleanRoomId).size
+            });
+        }
     });
 
     socket.on('send_message', async (data) => {
@@ -81,18 +83,12 @@ export const registerSocketHandlers = (io, socket) => {
         if (!cleanRoomId || !message) return;
 
         try {
-            console.log(`📝 Msg from [${socket.id}]: User:${userId} / Guest:${pGuestId} for room:${cleanRoomId}`);
-            
-            // Check if user/guest is participant
             const participantCheck = await pool.query(
                 "SELECT id FROM participants WHERE room_id = $1 AND ((user_id = $2 AND $2 IS NOT NULL) OR (user_tempeorary_id = $3 AND $3 IS NOT NULL)) AND is_removed = false",
                 [cleanRoomId, userId, pGuestId]
             );
 
-            if (participantCheck.rows.length === 0) {
-                console.warn(`⚠️ Send blocked: Socket [${socket.id}] identity not found in room ${cleanRoomId}`);
-                return socket.emit('error', 'You must join the room before sending messages');
-            }
+            if (participantCheck.rows.length === 0) return;
 
             const now = new Date().toISOString();
             await pool.query(
@@ -100,7 +96,6 @@ export const registerSocketHandlers = (io, socket) => {
                 [cleanRoomId, userId, pGuestId, message, now]
             );
 
-            console.log(`📡 Success. Socket [${socket.id}] broadcasting to room_${cleanRoomId}`);
             io.to(`room_${cleanRoomId}`).emit('receive_message', {
                 room_id: cleanRoomId,
                 message,
@@ -110,7 +105,7 @@ export const registerSocketHandlers = (io, socket) => {
                 timestamp: now
             });
         } catch (err) {
-            console.error('Socket message error details:', err);
+            console.error('Socket message error:', err);
         }
     });
 
@@ -128,7 +123,18 @@ export const registerSocketHandlers = (io, socket) => {
         const cleanRoomId = parseInt(room_id);
         console.log(`📞 User [${socket.id}] joined call in room_${cleanRoomId}`);
         
-        // Notify others that a new user joined the call
+        // Track call participants
+        if (!activeCalls.has(cleanRoomId)) {
+            activeCalls.set(cleanRoomId, new Set());
+        }
+        activeCalls.get(cleanRoomId).add(socket.id);
+
+        // Notify room that call is in progress
+        io.to(`room_${cleanRoomId}`).emit('call_in_progress', {
+            room_id: cleanRoomId,
+            participants_count: activeCalls.get(cleanRoomId).size
+        });
+        
         socket.to(`room_${cleanRoomId}`).emit('user_joined_call', {
             socket_id: socket.id,
             user: socket.data.user || { name: `Guest ${socket.id.slice(0, 4)}`, is_guest: true }
@@ -136,8 +142,7 @@ export const registerSocketHandlers = (io, socket) => {
     });
 
     socket.on('call_signal', (data) => {
-        const { to, signal, from } = data;
-        console.log(`📡 Relaying signal from [${socket.id}] to [${to}] type: ${signal.type || 'ice-candidate'}`);
+        const { to, signal } = data;
         io.to(to).emit('call_signal', {
             signal,
             from: socket.id,
@@ -148,6 +153,22 @@ export const registerSocketHandlers = (io, socket) => {
     socket.on('leave_call', (data) => {
         const { room_id } = data;
         const cleanRoomId = parseInt(room_id);
+        
+        if (activeCalls.has(cleanRoomId)) {
+            activeCalls.get(cleanRoomId).delete(socket.id);
+            if (activeCalls.get(cleanRoomId).size === 0) {
+                activeCalls.delete(cleanRoomId);
+                // Notify room that call ended
+                io.to(`room_${cleanRoomId}`).emit('call_ended', { room_id: cleanRoomId });
+            } else {
+                // Update count
+                io.to(`room_${cleanRoomId}`).emit('call_in_progress', {
+                    room_id: cleanRoomId,
+                    participants_count: activeCalls.get(cleanRoomId).size
+                });
+            }
+        }
+
         console.log(`📵 User [${socket.id}] left call in room_${cleanRoomId}`);
         socket.to(`room_${cleanRoomId}`).emit('user_left_call', {
             socket_id: socket.id
@@ -155,9 +176,14 @@ export const registerSocketHandlers = (io, socket) => {
     });
 
     socket.on('disconnect', async () => {
-        // Notify call participants if they were in a call
-        if (socket.data.room_id) {
-            socket.to(`room_${socket.data.room_id}`).emit('user_left_call', {
+        const roomId = socket.data.room_id;
+        if (roomId && activeCalls.has(parseInt(roomId))) {
+            activeCalls.get(parseInt(roomId)).delete(socket.id);
+            if (activeCalls.get(parseInt(roomId)).size === 0) {
+                activeCalls.delete(parseInt(roomId));
+                io.to(`room_${parseInt(roomId)}`).emit('call_ended', { room_id: parseInt(roomId) });
+            }
+            socket.to(`room_${parseInt(roomId)}`).emit('user_left_call', {
                 socket_id: socket.id
             });
         }
