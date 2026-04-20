@@ -103,16 +103,8 @@ const Home = () => {
     }
   };
 
-  const handleJoinRoom = async (roomId) => {
-    try {
-      await axios.post(`${API_URL}/join`, 
-        { room_id: roomId },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      navigate(`/room/${roomId}`);
-    } catch (error) {
-      console.error('Error joining room:', error);
-    }
+  const handleJoinRoom = (roomId) => {
+    navigate(`/room/${roomId}`);
   };
 
   const filteredRooms = rooms.filter(room => 

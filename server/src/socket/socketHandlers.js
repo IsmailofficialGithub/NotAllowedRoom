@@ -44,45 +44,50 @@ export const registerSocketHandlers = (io, socket) => {
 
     socket.on('join_room', async (data) => {
         const { room_id, guest_id } = data;
-        const user = socket.data.user;
+        const cleanRoomId = parseInt(room_id);
         
         // Store in socket for disconnect handling
-        socket.data.room_id = room_id;
+        socket.data.room_id = cleanRoomId;
         socket.data.guest_id = guest_id;
 
-        socket.join(`room_${room_id}`);
-        console.log(`👥 User ${socket.id} joined room_${room_id}`);
+        socket.join(`room_${cleanRoomId}`);
+        console.log(`👥 Socket ${socket.id} joined room_${cleanRoomId}`);
     });
 
     socket.on('send_message', async (data) => {
         const { room_id, message, guest_id, guest_name } = data;
         const user = socket.data.user; 
         
+        const cleanRoomId = parseInt(room_id);
         const userId = user?.id || null;
         const pName = user?.name || guest_name;
-        const pGuestId = userId ? null : (guest_id || socket.data.guest_id);
+        const pGuestId = userId ? null : (guest_id && guest_id !== 'null' && guest_id !== '' ? guest_id : socket.data.guest_id);
 
-        if (!room_id || !message) return;
+        if (!cleanRoomId || !message) return;
 
         try {
+            console.log(`📝 Processing message from User:${userId} / Guest:${pGuestId} for room:${cleanRoomId}`);
+            
             // Check if user/guest is participant
             const participantCheck = await pool.query(
-                "SELECT id FROM participants WHERE room_id = $1 AND (user_id = $2 OR user_tempeorary_id = $3) AND is_removed = false",
-                [room_id, userId, pGuestId]
+                "SELECT id FROM participants WHERE room_id = $1 AND ((user_id = $2 AND $2 IS NOT NULL) OR (user_tempeorary_id = $3 AND $3 IS NOT NULL)) AND is_removed = false",
+                [cleanRoomId, userId, pGuestId]
             );
 
             if (participantCheck.rows.length === 0) {
+                console.warn(`⚠️ Send blocked: Identity not found in participants table for room ${cleanRoomId}`);
                 return socket.emit('error', 'You must join the room before sending messages');
             }
 
             const now = new Date().toISOString();
             await pool.query(
                 "INSERT INTO room_messages (room_id, user_id, user_tempeorary_id, message, created_at) VALUES ($1, $2, $3, $4, $5)",
-                [room_id, userId, pGuestId, message, now]
+                [cleanRoomId, userId, pGuestId, message, now]
             );
 
-            io.to(`room_${room_id}`).emit('receive_message', {
-                room_id,
+            console.log(`📡 Success. Broadcasting to room_${cleanRoomId}`);
+            io.to(`room_${cleanRoomId}`).emit('receive_message', {
+                room_id: cleanRoomId,
                 message,
                 user_name: pName,
                 user_id: userId,
@@ -90,12 +95,12 @@ export const registerSocketHandlers = (io, socket) => {
                 timestamp: now
             });
         } catch (err) {
-            console.error('Socket message error:', err.message);
+            console.error('Socket message error details:', err);
         }
     });
 
     socket.on('leave_room', (data) => {
-        const roomId = data?.room_id || socket.data.room_id;
+        const roomId = parseInt(data?.room_id || socket.data.room_id);
         const guestId = data?.guest_id || socket.data.guest_id;
         handleParticipantLeave(roomId, guestId);
         socket.leave(`room_${roomId}`);

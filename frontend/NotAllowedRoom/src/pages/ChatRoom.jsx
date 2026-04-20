@@ -40,41 +40,102 @@ const ChatRoom = () => {
 
   const messagesEndRef = useRef(null);
   const hasJoined = useRef(false);
+  const prevRoomId = useRef(id);
 
+  // 1. Handle joining the room (once per room id)
   useEffect(() => {
-    if (showGuestPrompt || showPasswordPrompt || hasJoined.current) return;
+    if (showGuestPrompt || showPasswordPrompt) return;
+    
+    // Reset guard if room changes
+    if (prevRoomId.current !== id) {
+      hasJoined.current = false;
+      prevRoomId.current = id;
+    }
+
+    if (hasJoined.current) return;
+
+    // Hard guard: If guest and no name, don't join yet
+    if (!token && !guestName.trim()) {
+      setShowGuestPrompt(true);
+      return;
+    }
 
     hasJoined.current = true;
     fetchRoomData();
     if (socket) {
-      socket.emit('join_room', { room_id: id, guest_id: guestId });
-      
-      socket.on('receive_message', (message) => {
-        setMessages(prev => [...prev, message]);
-      });
+      const performJoin = () => {
+        console.log(`📡 Emitting join_room for room_${id}`);
+        socket.emit('join_room', { room_id: id, guest_id: guestId });
+      };
 
-      socket.on('participant_left', (data) => {
-        setParticipants(prev => prev.filter(p => 
-          (data.user_id && p.user_id !== data.user_id) || 
-          (data.guest_id && p.user_tempeorary_id !== data.guest_id)
-        ));
-      });
+      if (socket.connected) {
+        performJoin();
+      }
 
-      socket.on('error', (err) => {
-        if (err.includes('Unauthorized') || err.includes('password')) {
-           setShowPasswordPrompt(true);
-        }
-      });
-
+      socket.on('connect', performJoin);
       return () => {
-        // Notify server we are leaving manually
-        socket.emit('leave_room', { room_id: id, guest_id: guestId });
-        socket.off('receive_message');
-        socket.off('participant_left');
-        socket.off('error');
+        socket.off('connect', performJoin);
       };
     }
-  }, [id, socket, showGuestPrompt, showPasswordPrompt]);
+  }, [id, socket, showGuestPrompt, showPasswordPrompt, guestName, token, guestId]);
+
+  // 2. Handle socket listeners
+  useEffect(() => {
+    if (!socket) return;
+    console.log(`🎧 Attaching listeners for room_${id}`);
+
+    const handleReceiveMessage = (message) => {
+      console.log('✅ Message received in frontend:', message);
+      setMessages(prev => [...prev, message]);
+    };
+
+    const handleParticipantLeft = (data) => {
+      setParticipants(prev => prev.filter(p => 
+        (data.user_id && p.user_id !== data.user_id) || 
+        (data.guest_id && p.user_tempeorary_id !== data.guest_id)
+      ));
+    };
+
+    const handleError = (msg) => {
+      console.error('Socket error received:', msg);
+      setError(msg);
+    };
+
+    const handleCountUpdated = (data) => {
+      if (parseInt(data.room_id) === parseInt(id)) {
+        axios.get(`http://localhost:9000/api/v1/rooms/${id}/participants`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        }).then(res => setParticipants(res.data.data)).catch(console.error);
+      }
+    };
+
+    socket.on('receive_message', handleReceiveMessage);
+    socket.on('participant_left', handleParticipantLeft);
+    socket.on('error', handleError);
+    socket.on('participant_count_updated', handleCountUpdated);
+
+    return () => {
+      socket.off('receive_message', handleReceiveMessage);
+      socket.off('participant_left', handleParticipantLeft);
+      socket.off('error', handleError);
+      socket.off('participant_count_updated', handleCountUpdated);
+    };
+  }, [socket, id, guestId, token]);
+
+  // Handle Tab Close / Navigation away
+  useEffect(() => {
+    const handleUnload = () => {
+      if (socket) {
+        socket.emit('leave_room', { room_id: id, guest_id: guestId });
+      }
+      // Beacon for more reliability during close
+      const data = JSON.stringify({ room_id: id, guest_id: guestId });
+      navigator.sendBeacon('http://localhost:9000/api/v1/rooms/leave', new Blob([data], { type: 'application/json' }));
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [id, guestId, socket]);
 
   useEffect(() => {
     scrollToBottom();
@@ -119,6 +180,8 @@ const ChatRoom = () => {
        if (error.response?.status === 401) {
          setShowPasswordPrompt(true);
          if (joinPassword) setError('Invalid room password');
+       } else if (error.response?.status === 400) {
+         setShowGuestPrompt(true);
        }
        console.error('Error fetching room data:', error);
     }
@@ -128,8 +191,8 @@ const ChatRoom = () => {
     e.preventDefault();
     if (guestName.trim()) {
       localStorage.setItem('guest_name', guestName);
+      setShowGuestPrompt(false);
     }
-    setShowGuestPrompt(false);
   };
 
   const handlePasswordSubmit = (e) => {
@@ -139,7 +202,13 @@ const ChatRoom = () => {
 
   const handleSendMessage = (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !socket) return;
+    console.log('Attempting to send message:', newMessage);
+    console.log('Socket state:', socket ? 'Connected' : 'Disconnected');
+    
+    if (!newMessage.trim() || !socket) {
+      if (!socket) console.error('Cannot send: Socket disconnected');
+      return;
+    }
 
     socket.emit('send_message', {
       room_id: id,
@@ -148,6 +217,7 @@ const ChatRoom = () => {
       guest_name: guestName
     });
 
+    console.log('Message emitted');
     setNewMessage('');
   };
 
@@ -176,9 +246,10 @@ const ChatRoom = () => {
                 <input 
                   type="text" 
                   autoFocus
-                  placeholder="Your Name (Optional)"
+                  placeholder="Your Name"
                   value={guestName}
                   onChange={(e) => setGuestName(e.target.value)}
+                  required
                 />
               </div>
               <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '12px' }}>Start Chatting</button>
@@ -310,7 +381,8 @@ const ChatRoom = () => {
             gap: '12px', 
             padding: '8px 8px 8px 16px',
             borderRadius: '24px',
-            border: '1px solid var(--glass-border)'
+            border: '1px solid var(--glass-border)',
+            zIndex: 10
           }}
         >
           <button type="button" style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}>
@@ -345,6 +417,7 @@ const ChatRoom = () => {
               minWidth: 'auto'
             }}
             disabled={!newMessage.trim()}
+            onClick={handleSendMessage}
           >
             <Send size={18} />
           </button>
