@@ -12,12 +12,19 @@ export const registerSocketHandlers = (io, socket) => {
         if (roomId && (user || guestId)) {
             try {
                 const userId = user?.id || null;
-                const pGuestId = userId ? null : guestId;
+                const pGuestId = userId ? null : (guestId && guestId !== 'null' && guestId !== '' ? guestId : null);
+                
+                console.log(`📡 Socket Leave: User ${userId} / Guest ${pGuestId} from room ${roomId}`);
 
-                await pool.query(
-                    "UPDATE participants SET is_removed = true, removed_at = $1 WHERE room_id = $2 AND (user_id = $3 OR user_tempeorary_id = $4)",
+                const updateResult = await pool.query(
+                    "UPDATE participants SET is_removed = true, removed_at = $1 WHERE room_id = $2 AND (($3::INT IS NOT NULL AND user_id = $3) OR ($4::UUID IS NOT NULL AND user_tempeorary_id = $4))",
                     [new Date().toISOString(), roomId, userId, pGuestId]
                 );
+
+                if (updateResult.rowCount === 0) {
+                    console.warn(`⚠️ No participant found to remove from room ${roomId} (User:${userId} Guest:${pGuestId})`);
+                }
+
                 
                 // Notify others that someone left the room page
                 io.to(`room_${roomId}`).emit('participant_left', { 

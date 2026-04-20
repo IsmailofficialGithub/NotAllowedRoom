@@ -50,6 +50,7 @@ const Home = () => {
       });
 
       socket.on('participant_count_updated', (data) => {
+        console.log(`📊 Count updated for room ${data.room_id}: ${data.participant_count}`);
         setRooms(prev => prev.map(room => 
           Number(room.id) === Number(data.room_id) 
             ? { ...room, participant_count: data.participant_count } 
