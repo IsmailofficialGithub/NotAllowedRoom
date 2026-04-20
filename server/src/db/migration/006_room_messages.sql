@@ -1,7 +1,8 @@
 CREATE TABLE IF NOT EXISTS room_messages(
     id serial primary key,
     room_id INTEGER NOT NULL,
-    user_id INTEGER NOT NULL,
+    user_id INTEGER,
+    user_tempeorary_id UUID,
     message TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -11,5 +12,6 @@ CREATE TABLE IF NOT EXISTS room_messages(
 
 CREATE INDEX IF NOT EXISTS idx_room_messages_room_id ON room_messages(room_id);
 CREATE INDEX IF NOT EXISTS idx_room_messages_user_id ON room_messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_room_messages_user_tempeorary_id ON room_messages(user_tempeorary_id);
 CREATE INDEX IF NOT EXISTS idx_room_messages_created_at ON room_messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_room_messages_updated_at ON room_messages(updated_at);
