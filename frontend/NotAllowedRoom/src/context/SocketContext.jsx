@@ -14,7 +14,7 @@ export const SocketProvider = ({ children }) => {
     });
 
     newSocket.on('connect', () => {
-      console.log('⚡ Connected to Socket server');
+      console.log('⚡ Connected to Socket server with ID:', newSocket.id);
     });
 
     newSocket.on('connect_error', (err) => {

@@ -14,16 +14,20 @@ export const registerSocketHandlers = (io, socket) => {
                 const userId = user?.id || null;
                 const pGuestId = userId ? null : (guestId && guestId !== 'null' && guestId !== '' ? guestId : null);
                 
-                console.log(`📡 Socket Leave: User ${userId} / Guest ${pGuestId} from room ${roomId}`);
+                console.log(`📡 Socket Leave Flow:`);
+                console.log(`   - Room: ${roomId} (${typeof roomId})`);
+                console.log(`   - User: ${userId} (${typeof userId})`);
+                console.log(`   - Guest: ${pGuestId} (${typeof pGuestId})`);
 
                 const updateResult = await pool.query(
-                    "UPDATE participants SET is_removed = true, removed_at = $1 WHERE room_id = $2 AND (($3::INT IS NOT NULL AND user_id = $3) OR ($4::UUID IS NOT NULL AND user_tempeorary_id = $4))",
+                    "UPDATE participants SET is_removed = true, removed_at = $1 WHERE room_id = $2 AND ((user_id = $3 AND $3 IS NOT NULL) OR (user_tempeorary_id = $4 AND $4 IS NOT NULL))",
                     [new Date().toISOString(), roomId, userId, pGuestId]
                 );
 
                 if (updateResult.rowCount === 0) {
-                    console.warn(`⚠️ No participant found to remove from room ${roomId} (User:${userId} Guest:${pGuestId})`);
+                    console.warn(`⚠️ No participant row updated for exit. (This identity was likely already removed or never existed)`);
                 }
+
 
                 
                 const countResult = await pool.query(
@@ -61,8 +65,8 @@ export const registerSocketHandlers = (io, socket) => {
         socket.data.room_id = cleanRoomId;
         socket.data.guest_id = cleanGuestId;
 
-        socket.join(`room_${cleanRoomId}`);
-        console.log(`👥 Socket ${socket.id} joined room_${cleanRoomId} as Guest:${cleanGuestId}`);
+        await socket.join(`room_${cleanRoomId}`);
+        console.log(`👥 Socket [${socket.id}] successfully joined [room_${cleanRoomId}] as Guest:${cleanGuestId}`);
     });
 
     socket.on('send_message', async (data) => {
@@ -77,7 +81,7 @@ export const registerSocketHandlers = (io, socket) => {
         if (!cleanRoomId || !message) return;
 
         try {
-            console.log(`📝 Processing message from User:${userId} / Guest:${pGuestId} for room:${cleanRoomId}`);
+            console.log(`📝 Msg from [${socket.id}]: User:${userId} / Guest:${pGuestId} for room:${cleanRoomId}`);
             
             // Check if user/guest is participant
             const participantCheck = await pool.query(
@@ -86,7 +90,7 @@ export const registerSocketHandlers = (io, socket) => {
             );
 
             if (participantCheck.rows.length === 0) {
-                console.warn(`⚠️ Send blocked: Identity not found in participants table for room ${cleanRoomId}`);
+                console.warn(`⚠️ Send blocked: Socket [${socket.id}] identity not found in room ${cleanRoomId}`);
                 return socket.emit('error', 'You must join the room before sending messages');
             }
 
@@ -96,7 +100,7 @@ export const registerSocketHandlers = (io, socket) => {
                 [cleanRoomId, userId, pGuestId, message, now]
             );
 
-            console.log(`📡 Success. Broadcasting to room_${cleanRoomId}`);
+            console.log(`📡 Success. Socket [${socket.id}] broadcasting to room_${cleanRoomId}`);
             io.to(`room_${cleanRoomId}`).emit('receive_message', {
                 room_id: cleanRoomId,
                 message,
@@ -124,7 +128,6 @@ export const registerSocketHandlers = (io, socket) => {
 };
 
 import { Server } from 'socket.io';
-import jwt from 'jsonwebtoken';
 
 export const setupSocket = (server) => {
     const io = new Server(server, {
@@ -134,15 +137,27 @@ export const setupSocket = (server) => {
         }
     });
 
-    io.use((socket, next) => {
+    io.use(async (socket, next) => {
         const token = socket.handshake.auth.token;
         if (token) {
             try {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
-                socket.data.user = decoded;
+                const result = await pool.query(
+                    "SELECT u.id, u.name, u.email FROM auth_session s JOIN user_profile u ON s.user_id = u.id WHERE s.session_token = $1 AND s.is_active = true",
+                    [token]
+                );
+
+                if (result.rows.length > 0) {
+                    socket.data.user = result.rows[0];
+                    console.log(`🔑 Socket Auth Success: ${socket.data.user.name}`);
+                } else {
+                    socket.data.user = null;
+                }
             } catch (err) {
-                console.warn('Socket auth failed:', err.message);
+                console.error('Socket auth error:', err.message);
+                socket.data.user = null;
             }
+        } else {
+            socket.data.user = null;
         }
         next();
     });
