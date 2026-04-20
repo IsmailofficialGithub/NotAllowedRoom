@@ -1,39 +1,11 @@
 import express from 'express';
+import { CreateRoom, GetRooms, DeleteRoom } from '../controller/roomController.js';
+import { protect } from '../middleware/authMiddleware.js';
+
 const router = express.Router();
-import { v4 as uuidv4 } from 'uuid';
 
-const room = new Map();
-
-router.post('/create', (req, res) => {
-    try {
-        const { name } = req.body;
-        if (!name) {
-            return res.status(400).json({ message: "Name is required" });
-        }
-        const roomId = uuidv4();
-
-        const roomData = {
-            id: roomId,
-            hostName: name,
-            createdAt: new Date().toISOString(),
-            participates: []
-        }
-        room.set(roomId, roomData);
-        console.log('Room Created successfully');
-
-
-        res.status(201).json({
-            success: true,
-            message: "Room has been genereated",
-            roomId: roomId
-        });
-    } catch (error) {
-        console.log(error);
-        res.status(500).json({ message: "Internal server error" });
-    }
-
-
-})
-
+router.post('/create', protect, CreateRoom);
+router.get('/', GetRooms); // Public list of active rooms
+router.delete('/:id', protect, DeleteRoom);
 
 export default router;
