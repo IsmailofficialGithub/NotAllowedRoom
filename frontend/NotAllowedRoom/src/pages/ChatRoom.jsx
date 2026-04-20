@@ -39,10 +39,12 @@ const ChatRoom = () => {
   const [error, setError] = useState('');
 
   const messagesEndRef = useRef(null);
+  const hasJoined = useRef(false);
 
   useEffect(() => {
-    if (showGuestPrompt || showPasswordPrompt) return;
+    if (showGuestPrompt || showPasswordPrompt || hasJoined.current) return;
 
+    hasJoined.current = true;
     fetchRoomData();
     if (socket) {
       socket.emit('join_room', { room_id: id, guest_id: guestId });
@@ -99,6 +101,11 @@ const ChatRoom = () => {
         localStorage.setItem('guest_id', joinRes.data.guest_id);
       }
 
+      if (joinRes.data.name && !token) {
+        setGuestName(joinRes.data.name);
+        localStorage.setItem('guest_name', joinRes.data.name);
+      }
+
       const [msgRes, partRes] = await Promise.all([
         axios.get(`http://localhost:9000/api/v1/rooms/${id}/messages`, { headers }),
         axios.get(`http://localhost:9000/api/v1/rooms/${id}/participants`, { headers })
@@ -121,8 +128,8 @@ const ChatRoom = () => {
     e.preventDefault();
     if (guestName.trim()) {
       localStorage.setItem('guest_name', guestName);
-      setShowGuestPrompt(false);
     }
+    setShowGuestPrompt(false);
   };
 
   const handlePasswordSubmit = (e) => {
@@ -169,10 +176,9 @@ const ChatRoom = () => {
                 <input 
                   type="text" 
                   autoFocus
-                  placeholder="Your Name"
+                  placeholder="Your Name (Optional)"
                   value={guestName}
                   onChange={(e) => setGuestName(e.target.value)}
-                  required
                 />
               </div>
               <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '12px' }}>Start Chatting</button>

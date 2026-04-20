@@ -25,26 +25,36 @@ export const JoinRoom = async (req, res) => {
         let pEmail = req.user?.email || null;
         let pGuestId = userId ? null : (guest_id || uuidv4());
 
-        if (!pName) {
-            return res.status(400).json({ message: "Name is required for guest access" });
+        if (!userId && !pName) {
+            pName = `Guest_${Math.floor(1000 + Math.random() * 9000)}`;
         }
 
         // 2. Check if already in room or was previously a member
-        const existing = await pool.query(
-            "SELECT id, is_removed FROM participants WHERE room_id = $1 AND (user_id = $2 OR user_tempeorary_id = $3)",
-            [room_id, userId, pGuestId]
-        );
+        let query;
+        let params;
+        
+        if (userId) {
+            query = "SELECT id, is_removed, name FROM participants WHERE room_id = $1 AND user_id = $2";
+            params = [room_id, userId];
+        } else {
+            query = "SELECT id, is_removed, name FROM participants WHERE room_id = $1 AND user_tempeorary_id = $2";
+            params = [room_id, pGuestId];
+        }
+
+        const existing = await pool.query(query, params);
 
         if (existing.rows.length > 0) {
             const participant = existing.rows[0];
             
             // If they were previously removed, reactivate them
-            if (participant.is_removed) {
-                await pool.query(
-                    "UPDATE participants SET is_removed = false, removed_at = null, updated_at = $1 WHERE id = $2",
-                    [now, participant.id]
-                );
-            }
+            // Also update the name if it was auto-generated and they now provided one
+            const updatedName = (participant.name.startsWith('Guest_') && pName && !pName.startsWith('Guest_')) ? pName : participant.name;
+            const finalName = pName || participant.name;
+
+            await pool.query(
+                "UPDATE participants SET is_removed = false, name = $1, removed_at = null, updated_at = $2 WHERE id = $3",
+                [finalName, now, participant.id]
+            );
 
             // 4. Calculate and broadcast new participant count
             if (req.io) {
@@ -61,7 +71,8 @@ export const JoinRoom = async (req, res) => {
             return res.status(200).json({ 
                 message: "Joined successfully", 
                 participantId: participant.id,
-                guest_id: pGuestId 
+                guest_id: pGuestId,
+                name: pName
             });
         }
 
@@ -94,7 +105,8 @@ export const JoinRoom = async (req, res) => {
         res.status(200).json({ 
             message: "Joined successfully", 
             participantId: insertResult.rows[0].id,
-            guest_id: pGuestId 
+            guest_id: pGuestId,
+            name: pName
         });
     } catch (error) {
         console.error(error);
