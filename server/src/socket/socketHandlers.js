@@ -19,12 +19,23 @@ export const registerSocketHandlers = (io, socket) => {
                     [new Date().toISOString(), roomId, userId, pGuestId]
                 );
                 
-                // Notify others
+                // Notify others that someone left the room page
                 io.to(`room_${roomId}`).emit('participant_left', { 
                     user_id: userId, 
                     guest_id: pGuestId 
                 });
-                console.log(`👋 Participant removed from room_${roomId}`);
+
+                // 3. BROADCAST NEW COUNT TO DASHBOARD
+                const countResult = await pool.query(
+                    "SELECT COUNT(id) FROM participants WHERE room_id = $1 AND is_removed = false",
+                    [roomId]
+                );
+                io.emit('participant_count_updated', {
+                    room_id: parseInt(roomId),
+                    participant_count: parseInt(countResult.rows[0].count)
+                });
+
+                console.log(`👋 Participant removed from room_${roomId}. New count broadcasted.`);
             } catch (err) {
                 console.error('Error removing participant:', err.message);
             }

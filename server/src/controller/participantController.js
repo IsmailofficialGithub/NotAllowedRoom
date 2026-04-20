@@ -46,6 +46,18 @@ export const JoinRoom = async (req, res) => {
                 );
             }
 
+            // 4. Calculate and broadcast new participant count
+            if (req.io) {
+                const countResult = await pool.query(
+                    "SELECT COUNT(id) FROM participants WHERE room_id = $1 AND is_removed = false",
+                    [room_id]
+                );
+                req.io.emit('participant_count_updated', {
+                    room_id: room_id,
+                    participant_count: parseInt(countResult.rows[0].count)
+                });
+            }
+
             return res.status(200).json({ 
                 message: "Joined successfully", 
                 participantId: participant.id,
@@ -60,18 +72,29 @@ export const JoinRoom = async (req, res) => {
             }
         }
 
-        const result = await pool.query(
+        const insertResult = await pool.query(
             `INSERT INTO participants 
             (room_id, user_id, user_tempeorary_id, name, email, created_at, updated_at, is_allowed) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
             [room_id, userId, pGuestId, pName, pEmail, now, now, true]
         );
 
-        res.status(201).json({
-            success: true,
-            message: "Joined room successfully",
-            participantId: result.rows[0].id,
-            guest_id: pGuestId
+        // 4. Calculate and broadcast new participant count
+        if (req.io) {
+            const countResult = await pool.query(
+                "SELECT COUNT(id) FROM participants WHERE room_id = $1 AND is_removed = false",
+                [room_id]
+            );
+            req.io.emit('participant_count_updated', {
+                room_id: parseInt(room_id),
+                participant_count: parseInt(countResult.rows[0].count)
+            });
+        }
+
+        res.status(200).json({ 
+            message: "Joined successfully", 
+            participantId: insertResult.rows[0].id,
+            guest_id: pGuestId 
         });
     } catch (error) {
         console.error(error);
@@ -100,13 +123,25 @@ export const GetParticipants = async (req, res) => {
 export const LeaveRoom = async (req, res) => {
     try {
         const { room_id, guest_id } = req.body;
-        const userId = req.user?.user_id || null;
+        const userId = req.user?.id || null;
         const pGuestId = userId ? null : guest_id;
 
         await pool.query(
             "UPDATE participants SET is_removed = true, removed_at = $1 WHERE room_id = $2 AND (user_id = $3 OR user_tempeorary_id = $4)",
             [new Date().toISOString(), room_id, userId, pGuestId]
         );
+
+        // Broadcast new count
+        if (req.io) {
+            const countResult = await pool.query(
+                "SELECT COUNT(id) FROM participants WHERE room_id = $1 AND is_removed = false",
+                [room_id]
+            );
+            req.io.emit('participant_count_updated', {
+                room_id: parseInt(room_id),
+                participant_count: parseInt(countResult.rows[0].count)
+            });
+        }
 
         res.status(200).json({
             success: true,

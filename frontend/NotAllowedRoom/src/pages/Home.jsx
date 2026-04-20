@@ -49,9 +49,18 @@ const Home = () => {
         setRooms(prev => prev.filter(r => r.id !== parseInt(deletedId)));
       });
 
+      socket.on('participant_count_updated', (data) => {
+        setRooms(prev => prev.map(room => 
+          Number(room.id) === Number(data.room_id) 
+            ? { ...room, participant_count: data.participant_count } 
+            : room
+        ));
+      });
+
       return () => {
         socket.off('room_created');
         socket.off('room_deleted');
+        socket.off('participant_count_updated');
       };
     }
   }, [socket]);
