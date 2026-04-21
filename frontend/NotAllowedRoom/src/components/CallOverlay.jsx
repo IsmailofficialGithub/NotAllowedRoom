@@ -143,6 +143,11 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   }, [localStream]);
 
   const startLocalStream = async () => {
+    // Stop any existing tracks before getting new ones
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+    }
+    
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: initialVideo ? { width: 1280, height: 720 } : false,
@@ -391,6 +396,16 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     setIsScreenSharing(false);
   };
 
+  const handleLeave = () => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+    }
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(track => track.stop());
+    }
+    onLeave();
+  };
+
   const remotesCount = Object.keys(callParticipants).length;
 
   return (
@@ -444,7 +459,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
             <Maximize2 />
             <label>Share</label>
           </button>
-          <button onClick={onLeave} className="action-btn end-call">
+          <button onClick={handleLeave} className="action-btn end-call">
             <PhoneOff />
             <label>End</label>
           </button>
