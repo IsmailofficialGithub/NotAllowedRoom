@@ -1,15 +1,15 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Mic, MicOff, Video, VideoOff, PhoneOff, 
-  Maximize2, Users, Settings 
+import {
+  Mic, MicOff, Video, VideoOff, PhoneOff,
+  Maximize2, Users, Settings
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
 
 const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initialMuted = false }) => {
   const socket = useSocket();
   const [localStream, setLocalStream] = useState(null);
-  const [remoteStreams, setRemoteStreams] = useState({}); 
+  const [remoteStreams, setRemoteStreams] = useState({});
   const [callParticipants, setCallParticipants] = useState({}); // { socketId: user }
   const [participantOrder, setParticipantOrder] = useState(['local']);
   const [isMuted, setIsMuted] = useState(initialMuted);
@@ -17,7 +17,10 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [localIsSpeaking, setLocalIsSpeaking] = useState(false);
   const [remoteAudioSpeaks, setRemoteAudioSpeaks] = useState({}); // { socketId: boolean }
-  
+  const [devices, setDevices] = useState({ video: [], audio: [] });
+  const [selectedDevices, setSelectedDevices] = useState({ videoId: '', audioId: '' });
+  const [showSettings, setShowSettings] = useState(false);
+
   const localVideoRef = useRef();
   const localStreamRef = useRef(null);
   const peersRef = useRef({});
@@ -55,7 +58,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     const init = async () => {
       if (isInitializing.current || hasJoinedCall.current || !socket.id) return;
       isInitializing.current = true;
-      
+
       try {
         const stream = await startLocalStream();
         if (stream && !hasJoinedCall.current) {
@@ -94,7 +97,67 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     };
   }, [socket, socket?.connected, socket?.id, roomId, isRoomJoined]);
 
-  // Audio Logic with change guards
+  // Fetch available devices
+  useEffect(() => {
+    const getDevices = async () => {
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const video = devs.filter(d => d.kind === 'videoinput');
+        const audio = devs.filter(d => d.kind === 'audioinput');
+        setDevices({ video, audio });
+
+        // Auto-select first devices if not set
+        setSelectedDevices(prev => ({
+          videoId: prev.videoId || (video[0]?.deviceId || ''),
+          audioId: prev.audioId || (audio[0]?.deviceId || '')
+        }));
+      } catch (err) { console.error('Error fetching devices:', err); }
+    };
+    getDevices();
+    navigator.mediaDevices.addEventListener('devicechange', getDevices);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', getDevices);
+  }, []);
+
+  const changeDevice = async (type, deviceId) => {
+    if (!localStreamRef.current) return;
+
+    try {
+      const constraints = {
+        video: type === 'video' ? { deviceId: { exact: deviceId }, width: 1280, height: 720 } : (selectedDevices.videoId ? { deviceId: { exact: selectedDevices.videoId } } : true),
+        audio: type === 'audio' ? { deviceId: { exact: deviceId } } : (selectedDevices.audioId ? { deviceId: { exact: selectedDevices.audioId } } : true)
+      };
+
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const newTrack = type === 'video' ? newStream.getVideoTracks()[0] : newStream.getAudioTracks()[0];
+      const oldTracks = type === 'video' ? localStreamRef.current.getVideoTracks() : localStreamRef.current.getAudioTracks();
+
+      // Replace in local stream
+      oldTracks.forEach(t => {
+        localStreamRef.current.removeTrack(t);
+        t.stop();
+      });
+      localStreamRef.current.addTrack(newTrack);
+
+      // Replace in all peer connections
+      Object.values(peersRef.current).forEach(peer => {
+        const sender = peer.getSenders().find(s => s.track?.kind === type);
+        if (sender) sender.replaceTrack(newTrack);
+      });
+
+      if (type === 'video' && localVideoRef.current && !isScreenSharing) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+
+      setSelectedDevices(prev => ({ ...prev, [type === 'video' ? 'videoId' : 'audioId']: deviceId }));
+      if (type === 'video') setIsCameraOff(false);
+      else setIsMuted(false);
+
+    } catch (err) {
+      console.error('Failed to change device:', err);
+    }
+  };
+
+  // Handle local speaking highlight
   useEffect(() => {
     if (!localStream || isMuted) { setLocalIsSpeaking(false); return; }
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -199,9 +262,9 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
           await peer.setRemoteDescription(new RTCSessionDescription(signal));
         }
       } else if (signal.type === 'ice-candidate' && signal.candidate) {
-        try { 
+        try {
           if (peer.remoteDescription) {
-            await peer.addIceCandidate(new RTCIceCandidate(signal.candidate)); 
+            await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
           }
         } catch (err) { if (!ignoreOfferRef.current[from]) console.warn(`[WebRTC] ICE error:`, err); }
       }
@@ -317,7 +380,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
             if (!isLocal && !user) return null;
 
             return (
-              <motion.div 
+              <motion.div
                 key={id}
                 layout
                 drag
@@ -343,11 +406,11 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
                     </div>
                   </>
                 ) : (
-                  <RemoteVideo 
-                    socketId={id} 
-                    stream={remoteStreams[id]?.stream} 
-                    user={user} 
-                    onSpeaking={(speaking) => setRemoteAudioSpeaks(prev => speaking === prev[id] ? prev : ({...prev, [id]: speaking}))}
+                  <RemoteVideo
+                    socketId={id}
+                    stream={remoteStreams[id]?.stream}
+                    user={user}
+                    onSpeaking={(speaking) => setRemoteAudioSpeaks(prev => speaking === prev[id] ? prev : ({ ...prev, [id]: speaking }))}
                   />
                 )}
               </motion.div>
@@ -361,11 +424,76 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
           <button onClick={toggleMute} className={`action-btn ${isMuted ? 'muted' : ''}`}><MicOff /><label>Mute</label></button>
           <button onClick={toggleCamera} disabled={isScreenSharing} className={`action-btn ${isCameraOff ? 'camera-off' : ''}`}><VideoOff /><label>Camera</label></button>
           <button onClick={toggleScreenShare} className={`action-btn ${isScreenSharing ? 'sharing' : ''}`}><Maximize2 /><label>Share</label></button>
+          <button onClick={() => setShowSettings(!showSettings)} className={`action-btn ${showSettings ? 'active' : ''}`}><Settings /><label>Settings</label></button>
           <button onClick={handleLeave} className="action-btn end-call"><PhoneOff /><label>End</label></button>
         </div>
       </footer>
 
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="settings-modal"
+          >
+            <div className="settings-content">
+              <h3>Device Settings</h3>
+              <div className="setting-group">
+                <label><Video size={16} /> Camera</label>
+                <select
+                  value={selectedDevices.videoId}
+                  onChange={(e) => changeDevice('video', e.target.value)}
+                >
+                  {devices.video.map(d => (
+                    <option key={d.deviceId} value={d.deviceId}>{d.label || 'Camera ' + d.deviceId.slice(0, 5)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="setting-group">
+                <label><Mic size={16} /> Microphone</label>
+                <select
+                  value={selectedDevices.audioId}
+                  onChange={(e) => changeDevice('audio', e.target.value)}
+                >
+                  {devices.audio.map(d => (
+                    <option key={d.deviceId} value={d.deviceId}>{d.label || 'Mic ' + d.deviceId.slice(0, 5)}</option>
+                  ))}
+                </select>
+              </div>
+              <button className="close-settings" onClick={() => setShowSettings(false)}>Done</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <style>{`
+        .settings-modal { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 320px; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .settings-content h3 { margin: 0 0 20px 0; font-size: 1rem; color: #f8fafc; font-weight: 700; }
+        .setting-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
+        .setting-group label { font-size: 0.75rem; color: #94a3b8; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+        .setting-group select { 
+          background: #1e293b url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
+          border: 1px solid rgba(255,255,255,0.1); 
+          border-radius: 12px; 
+          color: white; 
+          padding: 12px; 
+          padding-right: 40px; 
+          font-size: 0.85rem; 
+          outline: none; 
+          transition: 0.3s; 
+          width: 100%; 
+          cursor: pointer; 
+          -webkit-appearance: none; 
+          -moz-appearance: none; 
+          appearance: none; 
+        }
+        .setting-group select option { background: #0f172a; color: white; padding: 10px; }
+        .setting-group select:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
+        .close-settings { width: 100%; padding: 14px; background: #6366f1; border: none; border-radius: 14px; color: white; font-weight: 700; font-size: 0.9rem; cursor: pointer; margin-top: 10px; transition: 0.3s; }
+        .close-settings:hover { background: #4f46e5; transform: scale(1.02); }
+        .action-btn.active { background: rgba(99, 102, 241, 0.2); border-color: #6366f1; color: #6366f1; }
+        
         .call-root-wrapper { position: fixed; inset: 0; height: 100dvh; background: #050508; z-index: 9999; display: flex; flex-direction: column; color: white; overflow: hidden; font-family: 'Inter', sans-serif; }
         .call-header { padding: 12px 30px; background: rgba(0,0,0,0.6); flex-shrink: 0; display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .header-info { display: flex; gap: 10px; align-items: center; }
