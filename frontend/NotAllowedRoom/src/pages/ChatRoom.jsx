@@ -431,7 +431,11 @@ const ChatRoom = () => {
             isRoomJoined={isSocketJoined}
             initialVideo={initialSettings.videoOn}
             initialMuted={!initialSettings.micOn}
-            onLeave={() => { setIsInCall(false); setCallType(null); }} 
+            onLeave={() => { 
+              setIsInCall(false); 
+              setCallType(null);
+              navigate('/');
+            }} 
           />
         )}
       </AnimatePresence>

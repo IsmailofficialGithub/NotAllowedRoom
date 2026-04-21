@@ -22,6 +22,8 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   const screenStreamRef = useRef(null);
   const isInitializing = useRef(false);
   const hasJoinedCall = useRef(false);
+  const makingOfferRef = useRef({});
+  const ignoreOfferRef = useRef({});
 
   const iceServers = {
     iceServers: [
@@ -183,14 +185,16 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       }));
     };
 
+    const polite = socket.id > targetSocketId;
     peer.onnegotiationneeded = async () => {
       try {
-        if (peer.signalingState !== 'stable') return;
-        const offer = await peer.createOffer();
-        await peer.setLocalDescription(offer);
+        makingOfferRef.current[targetSocketId] = true;
+        await peer.setLocalDescription();
         socket.emit('call_signal', { to: targetSocketId, signal: peer.localDescription });
       } catch (err) {
-        console.error('Negotiation failed:', err);
+        console.error('[WebRTC] Negotiation failed:', err);
+      } finally {
+        makingOfferRef.current[targetSocketId] = false;
       }
     };
 
@@ -200,16 +204,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       });
     }
 
-    if (isInitiator) {
-      peer.createOffer().then(offer => {
-        return peer.setLocalDescription(offer);
-      }).then(() => {
-        socket.emit('call_signal', {
-          to: targetSocketId,
-          signal: peer.localDescription
-        });
-      });
-    }
+    // Removed manual offer. onnegotiationneeded will handle it after addTrack.
 
     return peer;
   };
@@ -239,34 +234,36 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
 
   const handleSignal = async ({ signal, from, user }) => {
     let peer = peersRef.current[from];
-    if (signal.type === 'offer') {
-      if (!peer) peer = createPeer(from, user, false);
-      try {
+    if (!peer) peer = createPeer(from, user, false);
+
+    try {
+      if (signal.type === 'offer') {
+        const polite = socket.id > from;
+        const offerCollision = (makingOfferRef.current[from] || peer.signalingState !== 'stable');
+        
+        ignoreOfferRef.current[from] = !polite && offerCollision;
+        if (ignoreOfferRef.current[from]) {
+          console.warn('[WebRTC] Impolite peer ignoring offer collision from:', from);
+          return;
+        }
+
         await peer.setRemoteDescription(new RTCSessionDescription(signal));
-        const answer = await peer.createAnswer();
-        await peer.setLocalDescription(answer);
+        await peer.setLocalDescription(await peer.createAnswer());
         socket.emit('call_signal', { to: from, signal: peer.localDescription });
-      } catch (err) {
-        console.error('Error handling offer:', err);
-      }
-    } else if (signal.type === 'answer') {
-      if (peer) {
+        
+      } else if (signal.type === 'answer') {
+        await peer.setRemoteDescription(new RTCSessionDescription(signal));
+      } else if (signal.type === 'ice-candidate') {
         try {
-          await peer.setRemoteDescription(new RTCSessionDescription(signal));
+          await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
         } catch (err) {
-          console.error('Error handling answer:', err);
-        }
-      }
-    } else if (signal.type === 'ice-candidate') {
-      if (peer) {
-        try {
-          if (peer.remoteDescription) {
-            await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          if (!ignoreOfferRef.current[from]) {
+            console.warn('[WebRTC] Error adding ICE candidate:', err);
           }
-        } catch (err) {
-          console.error('Error adding ICE candidate:', err);
         }
       }
+    } catch (err) {
+      console.error('[WebRTC] Signaling error:', err);
     }
   };
 
@@ -296,11 +293,37 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     }
   };
 
-  const toggleCamera = () => {
-    if (localStreamRef.current && !isScreenSharing) {
-      const state = !isCameraOff;
-      localStreamRef.current.getVideoTracks().forEach(t => t.enabled = !state);
-      setIsCameraOff(state);
+  const toggleCamera = async () => {
+    if (!localStreamRef.current || isScreenSharing) return;
+    
+    let videoTrack = localStreamRef.current.getVideoTracks()[0];
+    
+    if (videoTrack) {
+      const isCurrentlyOff = !videoTrack.enabled;
+      videoTrack.enabled = isCurrentlyOff;
+      setIsCameraOff(!isCurrentlyOff);
+    } else {
+      // No camera track! (Joined with audio only)
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 1280, height: 720 } 
+        });
+        const newTrack = stream.getVideoTracks()[0];
+        
+        localStreamRef.current.addTrack(newTrack);
+        
+        // Force state update so UI and effects see the new track
+        setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+        
+        // Add to all existing peer connections
+        Object.values(peersRef.current).forEach(peer => {
+          peer.addTrack(newTrack, localStreamRef.current);
+        });
+        
+        setIsCameraOff(false);
+      } catch (err) {
+        console.error('[Call] Failed to acquire camera:', err);
+      }
     }
   };
 
@@ -452,10 +475,22 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
 const RemoteVideo = ({ stream, user, socketId }) => {
   const videoRef = useRef();
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [, forceUpdate] = useState({});
 
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
+      
+      // Listen for new tracks added to this stream
+      const handleAddTrack = () => {
+        console.log('🎞️ New track added to remote stream, updating video element');
+        videoRef.current.srcObject = null;
+        videoRef.current.srcObject = stream;
+        forceUpdate({}); 
+      };
+      
+      stream.addEventListener('addtrack', handleAddTrack);
+      return () => stream.removeEventListener('addtrack', handleAddTrack);
     }
   }, [stream]);
 
