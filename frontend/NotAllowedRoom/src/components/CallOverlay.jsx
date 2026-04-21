@@ -16,6 +16,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   const [isCameraOff, setIsCameraOff] = useState(!initialVideo);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [localIsSpeaking, setLocalIsSpeaking] = useState(false);
+  const [micLevel, setMicLevel] = useState(0); // For lobby meter
   const [remoteAudioSpeaks, setRemoteAudioSpeaks] = useState({}); // { socketId: boolean }
   const [devices, setDevices] = useState({ video: [], audio: [] });
   const [selectedDevices, setSelectedDevices] = useState({ videoId: '', audioId: '' });
@@ -133,6 +134,10 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       analyser.getByteFrequencyData(dataArray);
       let sum = 0; for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
       const average = sum / bufferLength;
+      
+      // Update continuous level for meter
+      setMicLevel(Math.min(100, Math.floor(average * 1.5)));
+
       const speaking = average > 30;
       if (speaking !== lastSpeaking) { lastSpeaking = speaking; setLocalIsSpeaking(speaking); }
       animationId = requestAnimationFrame(checkVolume);
@@ -388,7 +393,8 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
                 <div className="mic-meter-bg">
                   <motion.div 
                     className="mic-meter-fill"
-                    animate={{ width: `${localIsSpeaking ? 70 : 5}%` }}
+                    animate={{ width: `${micLevel}%` }}
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
                   />
                 </div>
               </div>
