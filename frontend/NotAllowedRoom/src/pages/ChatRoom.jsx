@@ -16,6 +16,7 @@ import {
   Video as VideoIcon
 } from 'lucide-react';
 import CallOverlay from '../components/CallOverlay';
+import PreJoinModal from '../components/PreJoinModal';
 
 const ChatRoom = () => {
   const { id } = useParams();
@@ -45,10 +46,12 @@ const ChatRoom = () => {
   const [isInCall, setIsInCall] = useState(false);
   const [callType, setCallType] = useState(null); // 'audio' or 'video'
   const [activeCall, setActiveCall] = useState(null); // { participants_count }
+  const [showPreJoin, setShowPreJoin] = useState(false);
+  const [isSocketJoined, setIsSocketJoined] = useState(false);
+  const [initialSettings, setInitialSettings] = useState({ micOn: true, videoOn: true });
+  const [hasJoined, setHasJoined] = useState(false);
 
   const messagesEndRef = useRef(null);
-  const hasJoined = useRef(false);
-  const prevRoomId = useRef(id);
   const currentRoomInfo = useRef({ id, guestId });
 
 
@@ -103,13 +106,7 @@ const ChatRoom = () => {
   useEffect(() => {
     if (!socket || !id || showGuestPrompt || showPasswordPrompt) return;
 
-    // Reset loop guard if ID changed
-    if (prevRoomId.current !== id) {
-      hasJoined.current = false;
-      prevRoomId.current = id;
-    }
-
-    if (hasJoined.current) return;
+    // removed incorrect early return
 
     if (!token && !guestName.trim()) {
       setShowGuestPrompt(true);
@@ -120,14 +117,30 @@ const ChatRoom = () => {
     const guestIdToUse = guestId || localStorage.getItem('guest_id');
 
     const initializeRoom = async () => {
-      hasJoined.current = true;
+      // Show PreJoin instead of joining immediately
+      if (!showPreJoin && !hasJoined) {
+        setShowPreJoin(true);
+        return;
+      }
+      
+      if (!hasJoined) return; // Wait for PreJoin completion
+
       await fetchRoomData();
 
       console.log(`🔗 [Socket] Joining room_${roomIdInt}`);
-      socket.emit('join_room', { room_id: roomIdInt, guest_id: guestIdToUse });
+      socket.emit('join_room', { room_id: roomIdInt, guest_id: guestIdToUse }, (response) => {
+        if (response?.success) {
+          console.log(`✅ [Socket] Successfully joined room_${roomIdInt}`);
+          setIsSocketJoined(true);
+        }
+      });
     };
 
     initializeRoom();
+    socket.on('connect', () => {
+      setIsSocketJoined(false);
+      initializeRoom();
+    });
 
     // Listeners
     const onMessage = (data) => {
@@ -156,7 +169,7 @@ const ChatRoom = () => {
       
       // Auto-join if someone else is in a call and we just joined the room
       // and we are not already in the call
-      if (!isInCall && !showGuestPrompt && !showPasswordPrompt) {
+      if (!isInCall && !showGuestPrompt && !showPasswordPrompt && !showPreJoin) {
         console.log("🚀 [Socket] Automatically joining existing call...");
         setCallType('video');
         setIsInCall(true);
@@ -181,8 +194,9 @@ const ChatRoom = () => {
       socket.off('participant_left', onParticipantLeft);
       socket.off('call_in_progress', onCallInProgress);
       socket.off('call_ended', onCallEnded);
+      socket.off('connect', initializeRoom);
     };
-  }, [socket, id, guestId, token, guestName, showGuestPrompt, showPasswordPrompt, isInCall]);
+  }, [socket, id, guestId, token, guestName, showGuestPrompt, showPasswordPrompt, isInCall, showPreJoin, hasJoined]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -264,6 +278,14 @@ const ChatRoom = () => {
     setNewMessage('');
   };
 
+  const onPreJoinSubmit = (settings) => {
+    setInitialSettings(settings);
+    setShowPreJoin(false);
+    setHasJoined(true);
+    setCallType(settings.videoOn ? 'video' : 'audio');
+    setIsInCall(true);
+  };
+
   return (
     <div style={{
       display: 'flex',
@@ -328,6 +350,14 @@ const ChatRoom = () => {
             </form>
           </motion.div>
         </div>
+      )}
+
+      {/* Pre-Join Screen */}
+      {showPreJoin && (
+        <PreJoinModal 
+          userName={user?.name || guestName} 
+          onJoin={onPreJoinSubmit} 
+        />
       )}
 
       {/* Top Bar */}
@@ -398,7 +428,9 @@ const ChatRoom = () => {
         {isInCall && (
           <CallOverlay 
             roomId={id} 
-            initialVideo={callType === 'video'}
+            isRoomJoined={isSocketJoined}
+            initialVideo={initialSettings.videoOn}
+            initialMuted={!initialSettings.micOn}
             onLeave={() => { setIsInCall(false); setCallType(null); }} 
           />
         )}

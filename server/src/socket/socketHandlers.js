@@ -23,34 +23,55 @@ export const registerSocketHandlers = (io, socket) => {
             try {
                 const userId = user?.id || null;
                 const pGuestId = userId ? null : (guestId && guestId !== 'null' && guestId !== '' ? guestId : null);
-                
-                const updateResult = await pool.query(
-                    "UPDATE participants SET is_removed = true, removed_at = $1 WHERE room_id = $2 AND ((user_id = $3 AND $3 IS NOT NULL) OR (user_tempeorary_id = $4 AND $4 IS NOT NULL))",
-                    [new Date().toISOString(), roomId, userId, pGuestId]
-                );
 
-                const countResult = await pool.query(
-                    "SELECT COUNT(id) FROM participants WHERE room_id = $1 AND is_removed = false",
-                    [roomId]
-                );
+                // Check if there are other sockets for this user/guest in this room
+                const roomSockets = await io.in(`room_${roomId}`).fetchSockets();
+                let otherSocketsForUser = false;
                 
-                const currentCount = parseInt(countResult.rows[0].count);
-                io.emit('participant_count_updated', {
-                    room_id: parseInt(roomId),
-                    participant_count: currentCount
-                });
+                for (const s of roomSockets) {
+                    if (s.id !== socket.id) {
+                        const sGuestId = s.data.guest_id;
+                        const sUserId = s.data.user?.id;
+                        if ((userId && sUserId === userId) || (pGuestId && sGuestId === pGuestId)) {
+                            otherSocketsForUser = true;
+                            break;
+                        }
+                    }
+                }
 
-                io.to(`room_${parseInt(roomId)}`).emit('participant_left', { 
-                    user_id: userId, 
-                    guest_id: pGuestId 
-                });
+                // Only mark as removed if this was the last socket for this user/guest
+                if (!otherSocketsForUser) {
+                    console.log(`👋 User ${userId || pGuestId} last socket disconnected from room_${roomId}`);
+                    const now = new Date().toISOString();
+                    await pool.query(
+                        "UPDATE participants SET is_removed = true, removed_at = $1 WHERE room_id = $2 AND (($3::INT IS NOT NULL AND user_id = $3) OR ($4::UUID IS NOT NULL AND user_tempeorary_id = $4))",
+                        [now, roomId, userId, pGuestId]
+                    );
+
+                    // Broadcast new unique count to everyone (for home page)
+                    const countResult = await pool.query(
+                        "SELECT COUNT(DISTINCT(COALESCE(user_id::TEXT, user_tempeorary_id::TEXT))) FROM participants WHERE room_id = $1 AND is_removed = false",
+                        [roomId]
+                    );
+                    
+                    const currentCount = parseInt(countResult.rows[0].count);
+                    io.emit('participant_count_updated', {
+                        room_id: parseInt(roomId),
+                        participant_count: currentCount
+                    });
+
+                    io.to(`room_${parseInt(roomId)}`).emit('participant_left', { 
+                        user_id: userId, 
+                        guest_id: pGuestId 
+                    });
+                }
             } catch (err) {
                 console.error('Error in handleParticipantLeave:', err);
             }
         }
     };
 
-    socket.on('join_room', async (data) => {
+    socket.on('join_room', async (data, callback) => {
         const { room_id, guest_id } = data;
         const cleanRoomId = parseInt(room_id);
         const cleanGuestId = (guest_id && guest_id !== 'null' && guest_id !== '') ? guest_id : null;
@@ -58,8 +79,10 @@ export const registerSocketHandlers = (io, socket) => {
         socket.data.room_id = cleanRoomId;
         socket.data.guest_id = cleanGuestId;
 
-        await socket.join(`room_${cleanRoomId}`);
+        socket.join(`room_${cleanRoomId}`);
         console.log(`👥 Socket [${socket.id}] joined [room_${cleanRoomId}]`);
+        
+        if (callback) callback({ success: true });
 
         // Notify if a call is active in this room
         if (activeCalls.has(cleanRoomId) && activeCalls.get(cleanRoomId).size > 0) {
@@ -123,18 +146,40 @@ export const registerSocketHandlers = (io, socket) => {
         const cleanRoomId = parseInt(room_id);
         console.log(`📞 User [${socket.id}] joined call in room_${cleanRoomId}`);
         
-        // Track call participants
+        // 1. Get existing participants (exclude self)
+        const participants = [];
+        if (activeCalls.has(cleanRoomId)) {
+            // We need to find the socket objects to get their user data
+            const clients = io.sockets.adapter.rooms.get(`room_${cleanRoomId}`);
+            if (clients) {
+                for (const clientId of clients) {
+                    if (clientId !== socket.id && activeCalls.get(cleanRoomId).has(clientId)) {
+                        const clientSocket = io.sockets.sockets.get(clientId);
+                        participants.push({
+                            socket_id: clientId,
+                            user: clientSocket?.data?.user || { name: `Guest ${clientId.slice(0, 4)}`, is_guest: true }
+                        });
+                    }
+                }
+            }
+        }
+
+        // 2. Track call participants
         if (!activeCalls.has(cleanRoomId)) {
             activeCalls.set(cleanRoomId, new Set());
         }
         activeCalls.get(cleanRoomId).add(socket.id);
 
-        // Notify room that call is in progress
+        // 3. Send existing participants to the joiner
+        socket.emit('current_participants', { participants });
+
+        // 4. Notify room that call is in progress (for UI updates)
         io.to(`room_${cleanRoomId}`).emit('call_in_progress', {
             room_id: cleanRoomId,
             participants_count: activeCalls.get(cleanRoomId).size
         });
         
+        // 5. Notify others that a new user joined
         socket.to(`room_${cleanRoomId}`).emit('user_joined_call', {
             socket_id: socket.id,
             user: socket.data.user || { name: `Guest ${socket.id.slice(0, 4)}`, is_guest: true }

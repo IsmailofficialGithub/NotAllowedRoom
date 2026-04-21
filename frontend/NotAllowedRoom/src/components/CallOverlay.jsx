@@ -6,11 +6,12 @@ import {
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
 
-const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
+const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initialMuted = false }) => {
   const socket = useSocket();
   const [localStream, setLocalStream] = useState(null);
   const [remoteStreams, setRemoteStreams] = useState({}); 
-  const [isMuted, setIsMuted] = useState(false);
+  const [callParticipants, setCallParticipants] = useState({}); // { socketId: user }
+  const [isMuted, setIsMuted] = useState(initialMuted);
   const [isCameraOff, setIsCameraOff] = useState(!initialVideo);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [localIsSpeaking, setLocalIsSpeaking] = useState(false);
@@ -31,16 +32,24 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
   };
 
   useEffect(() => {
+    if (!socket?.connected || !socket?.id || !isRoomJoined) return;
+
     const init = async () => {
-      if (isInitializing.current || hasJoinedCall.current) return;
+      if (isInitializing.current || hasJoinedCall.current || !socket.id) return;
       isInitializing.current = true;
       
       try {
-        await new Promise(resolve => setTimeout(resolve, 600));
         const stream = await startLocalStream();
         
         if (stream && !hasJoinedCall.current) {
           hasJoinedCall.current = true;
+          
+          // Now that stream is ready, register listeners and join
+          socket.on('user_joined_call', handleUserJoined);
+          socket.on('current_participants', handleCurrentParticipants);
+          socket.on('call_signal', handleSignal);
+          socket.on('user_left_call', handleUserLeft);
+          
           socket.emit('join_call', { room_id: roomId });
         }
       } catch (err) {
@@ -52,13 +61,10 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
 
     init();
 
-    socket.on('user_joined_call', handleUserJoined);
-    socket.on('call_signal', handleSignal);
-    socket.on('user_left_call', handleUserLeft);
-
     return () => {
       socket.emit('leave_call', { room_id: roomId });
       socket.off('user_joined_call');
+      socket.off('current_participants');
       socket.off('call_signal');
       socket.off('user_left_call');
       
@@ -69,8 +75,10 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
         screenStreamRef.current.getTracks().forEach(track => track.stop());
       }
       Object.values(peersRef.current).forEach(peer => peer.close());
+      hasJoinedCall.current = false;
+      isInitializing.current = false;
     };
-  }, [socket, roomId]);
+  }, [socket, socket?.connected, socket?.id, roomId, isRoomJoined]);
 
   // Handle local speaking highlight
   useEffect(() => {
@@ -104,12 +112,35 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
     };
   }, [localStream, isMuted]);
 
+  // Sync local video element
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      console.log('📽️ Attaching local stream to video element');
+      localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch(e => console.error('Video play failed:', e));
+      
+      const vTrack = localStream.getVideoTracks()[0];
+      if (vTrack) {
+        setIsCameraOff(!vTrack.enabled);
+      }
+    }
+  }, [localStream]);
+
   const startLocalStream = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: initialVideo ? { width: 1280, height: 720 } : false,
         audio: true
       });
+      
+      // Apply initial settings
+      if (initialMuted) {
+        stream.getAudioTracks().forEach(track => track.enabled = false);
+      }
+      if (!initialVideo) {
+        stream.getVideoTracks().forEach(track => track.enabled = false);
+      }
+
       setLocalStream(stream);
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
@@ -185,32 +216,71 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
 
   const handleUserJoined = ({ socket_id, user }) => {
     if (socket_id === socket.id) return;
-    const isInitiator = socket.id > socket_id;
+    console.log(`👤 User joined call: ${user?.name} (${socket_id})`);
+    setCallParticipants(prev => ({ ...prev, [socket_id]: user }));
+    
+    // We only initiate if we are deterministicly chosen
+    const isInitiator = socket.id > socket_id; 
     createPeer(socket_id, user, isInitiator);
+  };
+
+  const handleCurrentParticipants = ({ participants }) => {
+    console.log(`👥 Existing call participants:`, participants);
+    const newParticipants = {};
+    participants.forEach(({ socket_id, user }) => {
+      if (socket_id !== socket.id) {
+        newParticipants[socket_id] = user;
+        const isInitiator = socket.id > socket_id;
+        createPeer(socket_id, user, isInitiator);
+      }
+    });
+    setCallParticipants(prev => ({ ...prev, ...newParticipants }));
   };
 
   const handleSignal = async ({ signal, from, user }) => {
     let peer = peersRef.current[from];
     if (signal.type === 'offer') {
       if (!peer) peer = createPeer(from, user, false);
-      await peer.setRemoteDescription(new RTCSessionDescription(signal));
-      const answer = await peer.createAnswer();
-      await peer.setLocalDescription(answer);
-      socket.emit('call_signal', { to: from, signal: peer.localDescription });
+      try {
+        await peer.setRemoteDescription(new RTCSessionDescription(signal));
+        const answer = await peer.createAnswer();
+        await peer.setLocalDescription(answer);
+        socket.emit('call_signal', { to: from, signal: peer.localDescription });
+      } catch (err) {
+        console.error('Error handling offer:', err);
+      }
     } else if (signal.type === 'answer') {
-      if (peer) await peer.setRemoteDescription(new RTCSessionDescription(signal));
+      if (peer) {
+        try {
+          await peer.setRemoteDescription(new RTCSessionDescription(signal));
+        } catch (err) {
+          console.error('Error handling answer:', err);
+        }
+      }
     } else if (signal.type === 'ice-candidate') {
-      if (peer && peer.remoteDescription) {
-        await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      if (peer) {
+        try {
+          if (peer.remoteDescription) {
+            await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          }
+        } catch (err) {
+          console.error('Error adding ICE candidate:', err);
+        }
       }
     }
   };
 
   const handleUserLeft = ({ socket_id }) => {
+    console.log(`👋 User left call: ${socket_id}`);
     if (peersRef.current[socket_id]) {
       peersRef.current[socket_id].close();
       delete peersRef.current[socket_id];
     }
+    setCallParticipants(prev => {
+      const next = { ...prev };
+      delete next[socket_id];
+      return next;
+    });
     setRemoteStreams(prev => {
       const next = { ...prev };
       delete next[socket_id];
@@ -282,7 +352,7 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
     setIsScreenSharing(false);
   };
 
-  const remotesCount = Object.keys(remoteStreams).length;
+  const remotesCount = Object.keys(callParticipants).length;
 
   return (
     <div className="call-root-wrapper">
@@ -310,8 +380,13 @@ const CallOverlay = ({ roomId, onLeave, initialVideo = true }) => {
             </div>
           </div>
 
-          {Object.entries(remoteStreams).map(([id, data]) => (
-            <RemoteVideo key={id} socketId={id} stream={data.stream} user={data.user} />
+          {Object.entries(callParticipants).map(([id, user]) => (
+            <RemoteVideo 
+              key={id} 
+              socketId={id} 
+              stream={remoteStreams[id]?.stream} 
+              user={user} 
+            />
           ))}
         </div>
       </main>
@@ -418,7 +493,18 @@ const RemoteVideo = ({ stream, user, socketId }) => {
 
   return (
     <div className={`video-container ${isSpeaking ? 'active-speaker' : ''}`}>
-      <video ref={videoRef} autoPlay playsInline />
+      {stream ? (
+        <video ref={videoRef} autoPlay playsInline />
+      ) : (
+        <div className="camera-off-placeholder">
+          <div className="user-avatar" style={{ fontSize: '0.8rem' }}>
+            {user?.name?.slice(0, 2).toUpperCase() || '...'}
+          </div>
+          <div style={{ position: 'absolute', bottom: '40px', fontSize: '0.6rem', color: '#64748b' }}>
+            Connecting...
+          </div>
+        </div>
+      )}
       <div className="participant-label">{user?.name || 'Guest'}</div>
     </div>
   );
