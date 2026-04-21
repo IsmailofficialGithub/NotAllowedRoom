@@ -13,9 +13,27 @@ export const registerSocketHandlers = (io, socket) => {
 
         // Cleanup from active calls tracked in memory
         if (roomId && activeCalls.has(parseInt(roomId))) {
-            activeCalls.get(parseInt(roomId)).delete(socket.id);
-            if (activeCalls.get(parseInt(roomId)).size === 0) {
-                activeCalls.delete(parseInt(roomId));
+            const roomActiveCalls = activeCalls.get(parseInt(roomId));
+            if (roomActiveCalls.has(socket.id)) {
+                roomActiveCalls.delete(socket.id);
+                console.log(`📵 User [${socket.id}] removed from active calls in room_${roomId}`);
+                
+                // Notify others that this user left the call
+                socket.to(`room_${parseInt(roomId)}`).emit('user_left_call', {
+                    socket_id: socket.id
+                });
+
+                if (roomActiveCalls.size === 0) {
+                    activeCalls.delete(parseInt(roomId));
+                    // Notify room that call ended if last person left
+                    io.to(`room_${parseInt(roomId)}`).emit('call_ended', { room_id: parseInt(roomId) });
+                } else {
+                    // Update remaining participants about the new count
+                    io.to(`room_${parseInt(roomId)}`).emit('call_in_progress', {
+                        room_id: parseInt(roomId),
+                        participants_count: roomActiveCalls.size
+                    });
+                }
             }
         }
 
@@ -41,12 +59,14 @@ export const registerSocketHandlers = (io, socket) => {
 
                 // Only mark as removed if this was the last socket for this user/guest
                 if (!otherSocketsForUser) {
-                    console.log(`👋 User ${userId || pGuestId} last socket disconnected from room_${roomId}`);
+                    console.log(`👋 User [ID: ${userId}, Guest: ${pGuestId}] last socket disconnected from room_${roomId}. Updating DB...`);
                     const now = new Date().toISOString();
-                    await pool.query(
+                    const updateResult = await pool.query(
                         "UPDATE participants SET is_removed = true, removed_at = $1 WHERE room_id = $2 AND (($3::INT IS NOT NULL AND user_id = $3) OR ($4::UUID IS NOT NULL AND user_tempeorary_id = $4))",
                         [now, roomId, userId, pGuestId]
                     );
+
+                    console.log(`✅ DB Update result for room_${roomId}: ${updateResult.rowCount} rows marked as removed`);
 
                     // Broadcast new unique count to everyone (for home page)
                     const countResult = await pool.query(
@@ -236,17 +256,6 @@ export const registerSocketHandlers = (io, socket) => {
     });
 
     socket.on('disconnect', async () => {
-        const roomId = socket.data.room_id;
-        if (roomId && activeCalls.has(parseInt(roomId))) {
-            activeCalls.get(parseInt(roomId)).delete(socket.id);
-            if (activeCalls.get(parseInt(roomId)).size === 0) {
-                activeCalls.delete(parseInt(roomId));
-                io.to(`room_${parseInt(roomId)}`).emit('call_ended', { room_id: parseInt(roomId) });
-            }
-            socket.to(`room_${parseInt(roomId)}`).emit('user_left_call', {
-                socket_id: socket.id
-            });
-        }
         await handleParticipantLeave();
         console.log('👋 User disconnected:', socket.id);
     });

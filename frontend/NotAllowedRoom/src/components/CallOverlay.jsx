@@ -184,8 +184,14 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   const createPeer = (targetSocketId, user, isInitiator) => {
     if (peersRef.current[targetSocketId]) return peersRef.current[targetSocketId];
 
+    console.log(`📡 Creating peer connection for ${targetSocketId} (Initiator: ${isInitiator})`);
     const peer = new RTCPeerConnection(iceServers);
     peersRef.current[targetSocketId] = peer;
+
+    // Perfect Negotiation state
+    makingOfferRef.current[targetSocketId] = false;
+    ignoreOfferRef.current[targetSocketId] = false;
+    const polite = socket.id > targetSocketId; // Higher ID is polite
 
     peer.onicecandidate = (event) => {
       if (event.candidate) {
@@ -197,6 +203,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     };
 
     peer.ontrack = (event) => {
+      console.log(`🎥 Received remote track from ${targetSocketId}`);
       const [remoteStream] = event.streams;
       setRemoteStreams(prev => ({
         ...prev,
@@ -204,26 +211,33 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       }));
     };
 
-    const polite = socket.id > targetSocketId;
     peer.onnegotiationneeded = async () => {
       try {
+        console.log(`🔄 Negotiation needed for ${targetSocketId}`);
         makingOfferRef.current[targetSocketId] = true;
         await peer.setLocalDescription();
         socket.emit('call_signal', { to: targetSocketId, signal: peer.localDescription });
       } catch (err) {
-        console.error('[WebRTC] Negotiation failed:', err);
+        console.error(`[WebRTC] Negotiation failed for ${targetSocketId}:`, err);
       } finally {
         makingOfferRef.current[targetSocketId] = false;
       }
     };
 
+    peer.oniceconnectionstatechange = () => {
+      console.log(`❄️ ICE State for ${targetSocketId}: ${peer.iceConnectionState}`);
+      if (peer.iceConnectionState === 'failed') {
+        peer.restartIce();
+      }
+    };
+
+    // Add local tracks to the peer connection
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
+        console.log(`📤 Adding ${track.kind} track to ${targetSocketId}`);
         peer.addTrack(track, localStreamRef.current);
       });
     }
-
-    // Removed manual offer. onnegotiationneeded will handle it after addTrack.
 
     return peer;
   };
@@ -232,10 +246,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     if (socket_id === socket.id) return;
     console.log(`👤 User joined call: ${user?.name} (${socket_id})`);
     setCallParticipants(prev => ({ ...prev, [socket_id]: user }));
-    
-    // We only initiate if we are deterministicly chosen
-    const isInitiator = socket.id > socket_id; 
-    createPeer(socket_id, user, isInitiator);
+    createPeer(socket_id, user, true);
   };
 
   const handleCurrentParticipants = ({ participants }) => {
@@ -244,8 +255,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     participants.forEach(({ socket_id, user }) => {
       if (socket_id !== socket.id) {
         newParticipants[socket_id] = user;
-        const isInitiator = socket.id > socket_id;
-        createPeer(socket_id, user, isInitiator);
+        createPeer(socket_id, user, true);
       }
     });
     setCallParticipants(prev => ({ ...prev, ...newParticipants }));
@@ -253,7 +263,10 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
 
   const handleSignal = async ({ signal, from, user }) => {
     let peer = peersRef.current[from];
-    if (!peer) peer = createPeer(from, user, false);
+    if (!peer) {
+      console.log(`📡 Signal received from unknown peer ${from}, creating...`);
+      peer = createPeer(from, user, false);
+    }
 
     try {
       if (signal.type === 'offer') {
@@ -262,42 +275,52 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
         
         ignoreOfferRef.current[from] = !polite && offerCollision;
         if (ignoreOfferRef.current[from]) {
-          console.warn('[WebRTC] Impolite peer ignoring offer collision from:', from);
+          console.warn('[WebRTC] Coalescing: Ignoring offer collision from (higher-id wins):', from);
           return;
         }
 
+        console.log(`📥 Handling offer from ${from}`);
         await peer.setRemoteDescription(new RTCSessionDescription(signal));
-        await peer.setLocalDescription(await peer.createAnswer());
+        await peer.setLocalDescription();
         socket.emit('call_signal', { to: from, signal: peer.localDescription });
         
       } else if (signal.type === 'answer') {
+        console.log(`📥 Handling answer from ${from}`);
         await peer.setRemoteDescription(new RTCSessionDescription(signal));
-      } else if (signal.type === 'ice-candidate') {
+      } else if (signal.type === 'ice-candidate' && signal.candidate) {
         try {
+          console.log(`📥 Adding ICE candidate from ${from}`);
           await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
         } catch (err) {
           if (!ignoreOfferRef.current[from]) {
-            console.warn('[WebRTC] Error adding ICE candidate:', err);
+            console.warn(`[WebRTC] ICE candidate error from ${from}:`, err);
           }
         }
       }
     } catch (err) {
-      console.error('[WebRTC] Signaling error:', err);
+      console.error(`[WebRTC] Signaling error from ${from}:`, err);
     }
   };
 
   const handleUserLeft = ({ socket_id }) => {
-    console.log(`👋 User left call: ${socket_id}`);
+    console.log(`👋 [WebRTC] User left call: ${socket_id}`);
+    
+    // Close and cleanup peer connection
     if (peersRef.current[socket_id]) {
       peersRef.current[socket_id].close();
       delete peersRef.current[socket_id];
     }
+    
+    // Remove from UI state
     setCallParticipants(prev => {
+      if (!prev[socket_id]) return prev;
       const next = { ...prev };
       delete next[socket_id];
       return next;
     });
+    
     setRemoteStreams(prev => {
+      if (!prev[socket_id]) return prev;
       const next = { ...prev };
       delete next[socket_id];
       return next;

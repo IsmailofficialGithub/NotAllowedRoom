@@ -61,47 +61,38 @@ const ChatRoom = () => {
     currentRoomInfo.current = { id, guestId };
   }, [id, guestId]);
 
-  // Handle Unmount specifically for Navigation (Back button, etc)
+  // 1. Cleanup for UNMOUNT and NAVIGATION (Back button, etc)
   useEffect(() => {
+    // We use a ref to track if we've already sent leave_room for this unmount
     return () => {
+      // Capture latest IDs from ref
       const { id: leaveId, guestId: leaveGuestId } = currentRoomInfo.current;
-      if (socket) {
-        console.log(`👋 Component Unmounting: Sending leave_room for room_${leaveId}`);
+      if (socket?.connected && leaveId) {
+        console.log(`👋 [Unmount] Sending leave_room for room_${leaveId}`);
         socket.emit('leave_room', { room_id: leaveId, guest_id: leaveGuestId });
       }
     };
-  }, [socket]); // Only depends on socket instance
-
-  // const scrollToBottom = () => {
-  //   messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  // };
-
+  }, [socket]); // Only runs if socket object itself changes or on unmount
 
   // Sync scroll on messages change
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  // 1. Unmount cleanup (NAVIGATION/BACK BUTTON)
-  useEffect(() => {
-    return () => {
-      const { id: leaveId, guestId: leaveGuestId } = currentRoomInfo.current;
-      if (socket) {
-        console.log(`👋 Navigation Leave: room_${leaveId}`);
-        socket.emit('leave_room', { room_id: leaveId, guest_id: leaveGuestId });
-      }
-    };
-  }, [socket]);
-
   // 2. Browser Close cleanup (TAB CLOSE)
   useEffect(() => {
     const handleUnload = () => {
-      const data = JSON.stringify({ room_id: id, guest_id: guestId });
+      // We must include user_id because beacon requests don't include the Authorization header
+      const data = JSON.stringify({ 
+        room_id: id, 
+        user_id: user?.id, 
+        guest_id: guestId 
+      });
       navigator.sendBeacon('http://localhost:9000/api/v1/rooms/leave', new Blob([data], { type: 'application/json' }));
     };
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
-  }, [id, guestId]);
+  }, [id, guestId, user]);
 
   // 3. MAIN SOCKET LOGIC: Join and Listen
   useEffect(() => {
@@ -158,10 +149,20 @@ const ChatRoom = () => {
     };
 
     const onParticipantLeft = (data) => {
-      setParticipants(prev => prev.filter(p =>
-        (data.user_id && p.user_id !== data.user_id) ||
-        (data.guest_id && p.user_tempeorary_id !== data.guest_id)
-      ));
+      console.log("👋 [Socket] Participant Left Event Data:", data);
+      setParticipants(prev => {
+        const filtered = prev.filter(p => {
+          const isUserMatch = data.user_id && String(p.user_id) === String(data.user_id);
+          const isGuestMatch = data.guest_id && String(p.guest_id) === String(data.guest_id);
+          
+          if (isUserMatch || isGuestMatch) {
+            console.log(`✅ [Filter] Removing participant: ${p.user_name || p.guest_id}`);
+            return false;
+          }
+          return true;
+        });
+        return filtered;
+      });
     };
 
     const playNotificationSound = () => {
@@ -198,7 +199,7 @@ const ChatRoom = () => {
 
     socket.on('receive_message', onMessage);
     socket.on('participant_count_updated', onCountUpdate);
-    socket.on('user_left_room', onParticipantLeft);
+    socket.on('participant_left', onParticipantLeft);
     socket.on('user_joined_room', showJoinNotification);
     socket.on('call_in_progress', onCallInProgress);
     socket.on('call_ended', onCallEnded);
@@ -206,7 +207,7 @@ const ChatRoom = () => {
     return () => {
       socket.off('receive_message', onMessage);
       socket.off('participant_count_updated', onCountUpdate);
-      socket.off('user_left_room', onParticipantLeft);
+      socket.off('participant_left', onParticipantLeft);
       socket.off('user_joined_room', showJoinNotification);
       socket.off('call_in_progress', onCallInProgress);
       socket.off('call_ended', onCallEnded);
@@ -223,6 +224,7 @@ const ChatRoom = () => {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
       // Attempt to join first to verify access
+      console.log(`🚀 [JoinRoom] Request: room=${id}, user=${user?.id}, guest=${guestId}`);
       const joinRes = await axios.post(`http://localhost:9000/api/v1/rooms/join`, {
         room_id: id,
         password: joinPassword || password,
