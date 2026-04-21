@@ -84,6 +84,11 @@ export const registerSocketHandlers = (io, socket) => {
         
         if (callback) callback({ success: true });
 
+        socket.to(`room_${cleanRoomId}`).emit('user_joined_room', {
+            user_name: socket.data.user?.name || `Guest`,
+            socket_id: socket.id
+        });
+
         // Notify if a call is active in this room
         if (activeCalls.has(cleanRoomId) && activeCalls.get(cleanRoomId).size > 0) {
             console.log(`📞 Notifying [${socket.id}] about active call in room_${cleanRoomId}`);

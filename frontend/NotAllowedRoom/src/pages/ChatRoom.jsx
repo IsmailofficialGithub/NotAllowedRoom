@@ -50,6 +50,7 @@ const ChatRoom = () => {
   const [isSocketJoined, setIsSocketJoined] = useState(false);
   const [initialSettings, setInitialSettings] = useState({ micOn: true, videoOn: true });
   const [hasJoined, setHasJoined] = useState(false);
+  const [notification, setNotification] = useState(null);
 
   const messagesEndRef = useRef(null);
   const currentRoomInfo = useRef({ id, guestId });
@@ -163,6 +164,19 @@ const ChatRoom = () => {
       ));
     };
 
+    const playNotificationSound = () => {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
+      audio.volume = 0.5;
+      audio.play().catch(e => console.log('Sound play blocked'));
+    };
+
+    const showJoinNotification = (data) => {
+      if (data.socket_id === socket.id) return;
+      playNotificationSound();
+      setNotification({ message: `${data.user_name} joined the room`, type: 'join' });
+      setTimeout(() => setNotification(null), 3000);
+    };
+
     const onCallInProgress = (data) => {
       console.log("☎️ [Socket] Call in progress notification:", data);
       setActiveCall(data);
@@ -184,14 +198,16 @@ const ChatRoom = () => {
 
     socket.on('receive_message', onMessage);
     socket.on('participant_count_updated', onCountUpdate);
-    socket.on('participant_left', onParticipantLeft);
+    socket.on('user_left_room', onParticipantLeft);
+    socket.on('user_joined_room', showJoinNotification);
     socket.on('call_in_progress', onCallInProgress);
     socket.on('call_ended', onCallEnded);
 
     return () => {
       socket.off('receive_message', onMessage);
       socket.off('participant_count_updated', onCountUpdate);
-      socket.off('participant_left', onParticipantLeft);
+      socket.off('user_left_room', onParticipantLeft);
+      socket.off('user_joined_room', showJoinNotification);
       socket.off('call_in_progress', onCallInProgress);
       socket.off('call_ended', onCallEnded);
       socket.off('connect', initializeRoom);
@@ -359,6 +375,26 @@ const ChatRoom = () => {
           onJoin={onPreJoinSubmit} 
         />
       )}
+
+      {/* Join Notification Toast */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, x: '-50%' }}
+            animate={{ opacity: 1, y: 50, x: '-50%' }}
+            exit={{ opacity: 0, y: -50, x: '-50%' }}
+            style={{
+              position: 'fixed', top: 0, left: '50%', zIndex: 10000,
+              background: 'var(--accent-gradient)', padding: '12px 24px',
+              borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+              color: 'white', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px'
+            }}
+          >
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />
+            {notification.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Top Bar */}
       <header className="glass" style={{
