@@ -1,13 +1,12 @@
 CREATE TABLE IF NOT EXISTS user_access_log(
     id serial primary key,
     user_id INTEGER,
-    user_temporary_id UUID UNIQUE,
+    user_temporary_id UUID unique,
     room_id INTEGER NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES user_profile(id) ON DELETE CASCADE,
-    FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_temporary_id) REFERENCES participants(user_tempeorary_id) ON DELETE CASCADE
+    FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
 );
 
 
