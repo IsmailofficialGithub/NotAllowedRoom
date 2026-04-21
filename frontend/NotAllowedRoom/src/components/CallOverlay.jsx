@@ -419,6 +419,8 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     setIsScreenSharing(false);
   };
 
+  const containerRef = useRef(null);
+
   const handleLeave = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -430,6 +432,13 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   };
 
   const remotesCount = Object.keys(callParticipants).length;
+  const totalParticipants = remotesCount + 1;
+  const getGridClass = () => {
+    if (totalParticipants === 1) return 'grid-1';
+    if (totalParticipants === 2) return 'grid-2';
+    if (totalParticipants <= 4) return 'grid-4';
+    return 'grid-more';
+  };
 
   return (
     <div className="call-root-wrapper">
@@ -438,14 +447,23 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
           <div className="pulse-dot" />
           <div>
             <h1>Live Conference</h1>
-            <span className="room-subtext">{remotesCount === 0 ? 'Waitng for others...' : `${remotesCount + 1} participants in call`}</span>
+            <span className="room-subtext">{remotesCount === 0 ? 'Waitng for others...' : `${totalParticipants} participants in call`}</span>
           </div>
         </div>
       </header>
 
-      <main className="video-grid-container">
-        <div className="video-grid">
-          <div className={`video-container local ${localIsSpeaking ? 'active-speaker' : ''} ${isScreenSharing ? 'is-sharing' : ''}`}>
+      <main className="video-grid-container" ref={containerRef}>
+        <motion.div 
+          layout
+          className={`video-grid ${getGridClass()}`}
+        >
+          <motion.div 
+            drag
+            dragConstraints={containerRef}
+            dragElastic={0.05}
+            whileDrag={{ zIndex: 10, scale: 1.02 }}
+            className={`video-container local ${localIsSpeaking ? 'active-speaker' : ''} ${isScreenSharing ? 'is-sharing' : ''}`}
+          >
             <video ref={localVideoRef} autoPlay muted playsInline />
             {isCameraOff && !isScreenSharing && (
               <div className="camera-off-placeholder">
@@ -455,17 +473,25 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
             <div className="participant-label">
               {isScreenSharing ? 'You (Screen)' : 'You'} {isMuted && <MicOff size={10} />}
             </div>
-          </div>
+          </motion.div>
 
           {Object.entries(callParticipants).map(([id, user]) => (
-            <RemoteVideo 
+            <motion.div 
               key={id} 
-              socketId={id} 
-              stream={remoteStreams[id]?.stream} 
-              user={user} 
-            />
+              drag
+              dragConstraints={containerRef}
+              dragElastic={0.05}
+              whileDrag={{ zIndex: 10, scale: 1.02 }}
+              className="draggable-wrapper"
+            >
+              <RemoteVideo 
+                socketId={id} 
+                stream={remoteStreams[id]?.stream} 
+                user={user} 
+              />
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       </main>
 
       <footer className="call-controls">
@@ -500,27 +526,79 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
         .room-subtext { font-size: 0.65rem; color: #64748b; font-weight: 500; }
         .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 10px #10b981; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 0.4; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); } 100% { opacity: 0.4; transform: scale(0.9); } }
-        .video-grid-container { flex: 1; overflow-y: auto; display: flex; align-items: center; padding: 20px; }
-        .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; max-width: 1300px; width: 100%; margin: 0 auto; }
-        .video-container { background: #0f172a; border-radius: 12px; overflow: hidden; aspect-ratio: 16/9; position: relative; border: 2px solid transparent; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); background-image: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); }
-        .video-container video { width: 100%; height: 100%; object-fit: cover; }
+        
+        .video-grid-container { 
+          flex: 1; 
+          overflow: hidden; 
+          display: flex; 
+          align-items: center; 
+          justify-content: center;
+          padding: 10px; 
+          position: relative;
+        }
+
+        .video-grid { 
+          display: grid; 
+          gap: 12px; 
+          width: 100%; 
+          height: 100%;
+          max-width: none;
+          margin: 0;
+          transition: all 0.3s ease;
+        }
+
+        /* Responsive Grid Logic to Maximize Space */
+        .video-grid.grid-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+        .video-grid.grid-2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+        .video-grid.grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+        .video-grid.grid-more { grid-template-columns: repeat(auto-fit, minmax(30%, 1fr)); }
+
+        .video-container { 
+          background: #0f172a; 
+          border-radius: 16px; 
+          overflow: hidden; 
+          position: relative; 
+          border: 2px solid rgba(255,255,255,0.05); 
+          transition: border-color 0.3s, box-shadow 0.3s;
+          background-image: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+          cursor: grab;
+          touch-action: none;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .video-container:active { cursor: grabbing; }
+
+        .draggable-wrapper { width: 100%; height: 100%; display: block; }
+
+        .video-container video { width: 100%; height: 100%; object-fit: cover; border-radius: 14px; }
         .video-container.local video { transform: scaleX(-1); }
         .video-container.is-sharing video { transform: none; object-fit: contain; background: #000; }
-        .active-speaker { border-color: #6366f1 !important; box-shadow: 0 0 20px rgba(99, 102, 241, 0.4); z-index: 5; }
-        .participant-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 6px; font-size: 0.65rem; backdrop-filter: blur(8px); display: flex; align-items: center; gap: 5px; font-weight: 500; }
+        
+        .active-speaker { border-color: #6366f1 !important; box-shadow: 0 0 30px rgba(99, 102, 241, 0.4); z-index: 1; }
+        .participant-label { position: absolute; bottom: 12px; left: 12px; background: rgba(0,0,0,0.7); padding: 5px 12px; border-radius: 8px; font-size: 0.7rem; backdrop-filter: blur(10px); display: flex; align-items: center; gap: 6px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); }
         .camera-off-placeholder { position: absolute; inset: 0; background: #0f172a; display: flex; align-items: center; justify-content: center; }
-        .user-avatar { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #a855f7); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2rem; box-shadow: 0 8px 20px rgba(0,0,0,0.4); border: 2px solid rgba(255,255,255,0.1); }
-        .call-controls { padding: 20px; background: linear-gradient(transparent, rgba(0,0,0,0.9)); flex-shrink: 0; display: flex; justify-content: center; }
-        .controls-inner { display: flex; gap: 14px; background: rgba(15, 23, 42, 0.9); padding: 12px 24px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(20px); }
-        .action-btn { width: 52px; height: 52px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.03); color: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; transition: all 0.2s ease; }
-        .action-btn:hover { background: rgba(255,255,255,0.08); transform: translateY(-2px); border-color: rgba(255,255,255,0.2); }
+        .user-avatar { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #a855f7); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 2rem; box-shadow: 0 10px 25px rgba(0,0,0,0.6); border: 3px solid rgba(255,255,255,0.15); }
+        
+        .call-controls { padding: 30px; background: linear-gradient(transparent, rgba(0,0,0,0.95)); flex-shrink: 0; display: flex; justify-content: center; }
+        .controls-inner { display: flex; gap: 16px; background: rgba(15, 23, 42, 0.95); padding: 14px 28px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.12); backdrop-filter: blur(25px); box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .action-btn { width: 56px; height: 56px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.05); color: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .action-btn:hover { background: rgba(255,255,255,0.12); transform: translateY(-3px); border-color: rgba(255,255,255,0.25); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
         .action-btn:active { transform: translateY(0); }
-        .action-btn label { font-size: 0.5rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
-        .action-btn.muted, .action-btn.camera-off { color: #ef4444; background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.2); }
-        .action-btn.sharing { color: #10b981; background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); }
-        .action-btn.end-call { background: #ef4444; border: none; width: 64px; box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3); }
-        .action-btn.end-call:hover { background: #dc2626; box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4); }
+        .action-btn label { font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.7; }
+        .action-btn.muted, .action-btn.camera-off { color: #f87171; background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.3); }
+        .action-btn.sharing { color: #34d399; background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.3); }
+        .action-btn.end-call { background: #ef4444; border: none; width: 70px; box-shadow: 0 10px 25px rgba(239, 68, 68, 0.4); }
+        .action-btn.end-call:hover { background: #dc2626; box-shadow: 0 15px 30px rgba(239, 68, 68, 0.5); }
         .action-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        @media (max-width: 900px) {
+          .video-grid.grid-2, .video-grid.grid-4 { grid-template-columns: 1fr; grid-template-rows: repeat(auto-fill, 1fr); }
+          .video-container { aspect-ratio: 16/9; height: auto; }
+        }
       `}</style>
     </div>
   );

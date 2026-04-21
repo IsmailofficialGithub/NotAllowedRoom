@@ -105,9 +105,6 @@ const ChatRoom = () => {
       return;
     }
 
-    const roomIdInt = parseInt(id);
-    const guestIdToUse = guestId || localStorage.getItem('guest_id');
-
     const initializeRoom = async () => {
       // Show PreJoin instead of joining immediately
       if (!showPreJoin && !hasJoined) {
@@ -119,6 +116,9 @@ const ChatRoom = () => {
 
       await fetchRoomData();
 
+      const roomIdInt = parseInt(id);
+      const guestIdToUse = guestId || localStorage.getItem('guest_id');
+      
       console.log(`🔗 [Socket] Joining room_${roomIdInt}`);
       socket.emit('join_room', { room_id: roomIdInt, guest_id: guestIdToUse }, (response) => {
         if (response?.success) {
@@ -129,44 +129,42 @@ const ChatRoom = () => {
     };
 
     initializeRoom();
-    socket.on('connect', () => {
-      setIsSocketJoined(false);
-      initializeRoom();
-    });
+    
+    socket.on('connect', initializeRoom);
 
-    // Listeners
+    return () => {
+      socket.off('connect', initializeRoom);
+    };
+  }, [socket, id, guestId, token, guestName, showGuestPrompt, showPasswordPrompt, showPreJoin, hasJoined]);
+
+  // 4. Socket Events Effect
+  useEffect(() => {
+    if (!socket || !id || !isSocketJoined) return;
+
     const onMessage = (data) => {
       console.log("📥 [Socket] Message Received:", data);
       setMessages(prev => [...prev, data]);
+      scrollToBottom();
     };
 
     const onCountUpdate = (data) => {
-      if (parseInt(data.room_id) === roomIdInt) {
-        axios.get(`http://localhost:9000/api/v1/rooms/${id}/participants`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        }).then(res => setParticipants(res.data.data)).catch(console.error);
-      }
+      console.log("📊 Count updated for room", data.room_id, ":", data.participant_count);
+      // We could use this to update local state if needed
     };
 
     const onParticipantLeft = (data) => {
-      console.log("👋 [Socket] Participant Left Event Data:", data);
-      setParticipants(prev => {
-        const filtered = prev.filter(p => {
-          const isUserMatch = data.user_id && String(p.user_id) === String(data.user_id);
-          const isGuestMatch = data.guest_id && String(p.guest_id) === String(data.guest_id);
-          
-          if (isUserMatch || isGuestMatch) {
-            console.log(`✅ [Filter] Removing participant: ${p.user_name || p.guest_id}`);
-            return false;
-          }
-          return true;
-        });
-        return filtered;
-      });
+      setParticipants(prev => prev.filter(p => {
+        const pUserId = p.user_id ? String(p.user_id) : null;
+        const pGuestId = p.user_tempeorary_id ? String(p.user_tempeorary_id) : null;
+        const leftUserId = data.user_id ? String(data.user_id) : null;
+        const leftGuestId = data.guest_id ? String(data.guest_id) : null;
+        
+        return (pUserId !== leftUserId || !leftUserId) && (pGuestId !== leftGuestId || !leftGuestId);
+      }));
     };
 
     const playNotificationSound = () => {
-      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
+      const audio = new Audio('/notification.mp3');
       audio.volume = 0.5;
       audio.play().catch(e => console.log('Sound play blocked'));
     };
@@ -182,9 +180,8 @@ const ChatRoom = () => {
       console.log("☎️ [Socket] Call in progress notification:", data);
       setActiveCall(data);
       
-      // Auto-join if someone else is in a call and we just joined the room
-      // and we are not already in the call
-      if (!isInCall && !showGuestPrompt && !showPasswordPrompt && !showPreJoin) {
+      // Auto-join only if we are specifically authorized and not already in
+      if (!isInCall && !showGuestPrompt && !showPasswordPrompt && !showPreJoin && hasJoined) {
         console.log("🚀 [Socket] Automatically joining existing call...");
         setCallType('video');
         setIsInCall(true);
@@ -211,9 +208,8 @@ const ChatRoom = () => {
       socket.off('user_joined_room', showJoinNotification);
       socket.off('call_in_progress', onCallInProgress);
       socket.off('call_ended', onCallEnded);
-      socket.off('connect', initializeRoom);
     };
-  }, [socket, id, guestId, token, guestName, showGuestPrompt, showPasswordPrompt, isInCall, showPreJoin, hasJoined]);
+  }, [socket, id, isSocketJoined, isInCall]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
