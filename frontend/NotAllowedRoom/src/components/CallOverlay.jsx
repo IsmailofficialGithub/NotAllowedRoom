@@ -1,15 +1,15 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Mic, MicOff, Video, VideoOff, PhoneOff,
-  Maximize2, Users, Settings
+import { 
+  Mic, MicOff, Video, VideoOff, PhoneOff, 
+  Maximize2, Users, Settings, Volume2, CheckCircle2
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
 
 const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initialMuted = false }) => {
   const socket = useSocket();
   const [localStream, setLocalStream] = useState(null);
-  const [remoteStreams, setRemoteStreams] = useState({});
+  const [remoteStreams, setRemoteStreams] = useState({}); 
   const [callParticipants, setCallParticipants] = useState({}); // { socketId: user }
   const [participantOrder, setParticipantOrder] = useState(['local']);
   const [isMuted, setIsMuted] = useState(initialMuted);
@@ -20,7 +20,8 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   const [devices, setDevices] = useState({ video: [], audio: [] });
   const [selectedDevices, setSelectedDevices] = useState({ videoId: '', audioId: '' });
   const [showSettings, setShowSettings] = useState(false);
-
+  const [isJoined, setIsJoined] = useState(false); // Lobby state
+  
   const localVideoRef = useRef();
   const localStreamRef = useRef(null);
   const peersRef = useRef({});
@@ -32,71 +33,6 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   const containerRef = useRef(null);
   const itemRefs = useRef({});
 
-  // Sync participant list with order
-  useEffect(() => {
-    const remoteIds = Object.keys(callParticipants);
-    setParticipantOrder(prev => {
-      const newOrder = prev.filter(id => id === 'local' || remoteIds.includes(id));
-      remoteIds.forEach(id => {
-        if (!newOrder.includes(id)) newOrder.push(id);
-      });
-      return [...newOrder];
-    });
-  }, [callParticipants]);
-
-  const iceServers = {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-    ]
-  };
-
-  useEffect(() => {
-    if (!socket?.connected || !socket?.id || !isRoomJoined) return;
-
-    const init = async () => {
-      if (isInitializing.current || hasJoinedCall.current || !socket.id) return;
-      isInitializing.current = true;
-
-      try {
-        const stream = await startLocalStream();
-        if (stream && !hasJoinedCall.current) {
-          hasJoinedCall.current = true;
-          socket.on('user_joined_call', handleUserJoined);
-          socket.on('current_participants', handleCurrentParticipants);
-          socket.on('call_signal', handleSignal);
-          socket.on('user_left_call', handleUserLeft);
-          socket.emit('join_call', { room_id: roomId });
-          socket.on('user_toggle_media', ({ socket_id, type, status }) => {
-            setCallParticipants(prev => {
-              const user = prev[socket_id];
-              if (!user) return prev;
-              return { ...prev, [socket_id]: { ...user, [type === 'mic' ? 'isMuted' : 'isCameraOff']: !status } };
-            });
-          });
-        }
-      } catch (err) {
-        console.error('[Call] Init failed:', err);
-      } finally {
-        isInitializing.current = false;
-      }
-    };
-    init();
-    return () => {
-      socket.emit('leave_call', { room_id: roomId });
-      socket.off('user_joined_call');
-      socket.off('current_participants');
-      socket.off('call_signal');
-      socket.off('user_left_call');
-      if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => track.stop());
-      if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(track => track.stop());
-      Object.values(peersRef.current).forEach(peer => peer.close());
-      hasJoinedCall.current = false;
-      isInitializing.current = false;
-    };
-  }, [socket, socket?.connected, socket?.id, roomId, isRoomJoined]);
-
   // Fetch available devices
   useEffect(() => {
     const getDevices = async () => {
@@ -105,8 +41,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
         const video = devs.filter(d => d.kind === 'videoinput');
         const audio = devs.filter(d => d.kind === 'audioinput');
         setDevices({ video, audio });
-
-        // Auto-select first devices if not set
+        
         setSelectedDevices(prev => ({
           videoId: prev.videoId || (video[0]?.deviceId || ''),
           audioId: prev.audioId || (audio[0]?.deviceId || '')
@@ -115,49 +50,75 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     };
     getDevices();
     navigator.mediaDevices.addEventListener('devicechange', getDevices);
-    return () => navigator.mediaDevices.removeEventListener('devicechange', getDevices);
+
+    // Initial stream for lobby preview
+    const startPreview = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 1280, height: 720 },
+          audio: true
+        });
+        setLocalStream(stream);
+        localStreamRef.current = stream;
+        if (initialMuted) stream.getAudioTracks().forEach(t => t.enabled = false);
+        if (!initialVideo) {
+          stream.getVideoTracks().forEach(t => t.enabled = false);
+          setIsCameraOff(true);
+        }
+      } catch (e) { console.error('Preview failed:', e); }
+    };
+    startPreview();
+
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', getDevices);
+      if (localStreamRef.current && !isJoined) {
+        localStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+    };
   }, []);
 
-  const changeDevice = async (type, deviceId) => {
-    if (!localStreamRef.current) return;
+  // Main call initialization (runs after Join Now)
+  useEffect(() => {
+    if (!socket?.connected || !socket?.id || !isRoomJoined || !isJoined) return;
 
-    try {
-      const constraints = {
-        video: type === 'video' ? { deviceId: { exact: deviceId }, width: 1280, height: 720 } : (selectedDevices.videoId ? { deviceId: { exact: selectedDevices.videoId } } : true),
-        audio: type === 'audio' ? { deviceId: { exact: deviceId } } : (selectedDevices.audioId ? { deviceId: { exact: selectedDevices.audioId } } : true)
-      };
-
-      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      const newTrack = type === 'video' ? newStream.getVideoTracks()[0] : newStream.getAudioTracks()[0];
-      const oldTracks = type === 'video' ? localStreamRef.current.getVideoTracks() : localStreamRef.current.getAudioTracks();
-
-      // Replace in local stream
-      oldTracks.forEach(t => {
-        localStreamRef.current.removeTrack(t);
-        t.stop();
-      });
-      localStreamRef.current.addTrack(newTrack);
-
-      // Replace in all peer connections
-      Object.values(peersRef.current).forEach(peer => {
-        const sender = peer.getSenders().find(s => s.track?.kind === type);
-        if (sender) sender.replaceTrack(newTrack);
-      });
-
-      if (type === 'video' && localVideoRef.current && !isScreenSharing) {
-        localVideoRef.current.srcObject = localStreamRef.current;
+    const init = async () => {
+      if (isInitializing.current || hasJoinedCall.current || !socket.id) return;
+      isInitializing.current = true;
+      
+      try {
+        hasJoinedCall.current = true;
+        socket.on('user_joined_call', handleUserJoined);
+        socket.on('current_participants', handleCurrentParticipants);
+        socket.on('call_signal', handleSignal);
+        socket.on('user_left_call', handleUserLeft);
+        socket.emit('join_call', { room_id: roomId });
+        socket.on('user_toggle_media', ({ socket_id, type, status }) => {
+          setCallParticipants(prev => {
+            const user = prev[socket_id];
+            if (!user) return prev;
+            return { ...prev, [socket_id]: { ...user, [type === 'mic' ? 'isMuted' : 'isCameraOff']: !status } };
+          });
+        });
+      } catch (err) {
+        console.error('[Call] Init failed:', err);
+      } finally {
+        isInitializing.current = false;
       }
+    };
+    init();
 
-      setSelectedDevices(prev => ({ ...prev, [type === 'video' ? 'videoId' : 'audioId']: deviceId }));
-      if (type === 'video') setIsCameraOff(false);
-      else setIsMuted(false);
+    return () => {
+      socket.emit('leave_call', { room_id: roomId });
+      socket.off('user_joined_call');
+      socket.off('current_participants');
+      socket.off('call_signal');
+      socket.off('user_left_call');
+      Object.values(peersRef.current).forEach(peer => peer.close());
+      hasJoinedCall.current = false;
+    };
+  }, [socket, socket?.connected, socket?.id, roomId, isRoomJoined, isJoined]);
 
-    } catch (err) {
-      console.error('Failed to change device:', err);
-    }
-  };
-
-  // Handle local speaking highlight
+  // Audio Logic with change guards
   useEffect(() => {
     if (!localStream || isMuted) { setLocalIsSpeaking(false); return; }
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -185,28 +146,69 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       localVideoRef.current.srcObject = localStream;
       localVideoRef.current.play().catch(e => console.error('Video play failed:', e));
     }
-  }, [localStream]);
+  }, [localStream, isJoined]);
 
-  const startLocalStream = async () => {
-    if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => track.stop());
+  const changeDevice = async (type, deviceId) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: initialVideo ? { width: 1280, height: 720 } : false, audio: true
-      });
-      if (initialMuted) stream.getAudioTracks().forEach(track => track.enabled = false);
-      if (!initialVideo) stream.getVideoTracks().forEach(track => track.enabled = false);
-      setLocalStream(stream); localStreamRef.current = stream; return stream;
+      const constraints = {
+        video: type === 'video' ? { deviceId: { exact: deviceId }, width: 1280, height: 720 } : (selectedDevices.videoId ? { deviceId: { exact: selectedDevices.videoId } } : true),
+        audio: type === 'audio' ? { deviceId: { exact: deviceId } } : (selectedDevices.audioId ? { deviceId: { exact: selectedDevices.audioId } } : true)
+      };
+
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const newTrack = type === 'video' ? newStream.getVideoTracks()[0] : newStream.getAudioTracks()[0];
+      const oldTracks = type === 'video' ? localStreamRef.current?.getVideoTracks() : localStreamRef.current?.getAudioTracks();
+      
+      if (oldTracks) {
+        oldTracks.forEach(t => {
+          localStreamRef.current?.removeTrack(t);
+          t.stop();
+        });
+      }
+      
+      if (!localStreamRef.current) {
+        setLocalStream(newStream);
+        localStreamRef.current = newStream;
+      } else {
+        localStreamRef.current.addTrack(newTrack);
+      }
+
+      // Replace in all peer connections if already joined
+      if (isJoined) {
+        Object.values(peersRef.current).forEach(peer => {
+          const sender = peer.getSenders().find(s => s.track?.kind === type);
+          if (sender) sender.replaceTrack(newTrack);
+        });
+      }
+
+      if (type === 'video' && localVideoRef.current && !isScreenSharing) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+
+      setSelectedDevices(prev => ({ ...prev, [type === 'video' ? 'videoId' : 'audioId']: deviceId }));
+      if (type === 'video') setIsCameraOff(false);
+      else setIsMuted(false);
+
     } catch (err) {
-      try {
-        const audioOnly = await navigator.mediaDevices.getUserMedia({ audio: true });
-        setLocalStream(audioOnly); localStreamRef.current = audioOnly; setIsCameraOff(true); return audioOnly;
-      } catch (audioErr) { return null; }
+      console.error('Failed to change device:', err);
     }
   };
 
+  // Sync participant list with order
+  useEffect(() => {
+    const remoteIds = Object.keys(callParticipants);
+    setParticipantOrder(prev => {
+      const newOrder = prev.filter(id => id === 'local' || remoteIds.includes(id));
+      remoteIds.forEach(id => { if (!newOrder.includes(id)) newOrder.push(id); });
+      return [...newOrder];
+    });
+  }, [callParticipants]);
+
   const createPeer = (targetSocketId, user, isInitiator) => {
     if (peersRef.current[targetSocketId]) return peersRef.current[targetSocketId];
-    const peer = new RTCPeerConnection(iceServers);
+    const peer = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
     peersRef.current[targetSocketId] = peer;
     makingOfferRef.current[targetSocketId] = false;
     ignoreOfferRef.current[targetSocketId] = false;
@@ -262,11 +264,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
           await peer.setRemoteDescription(new RTCSessionDescription(signal));
         }
       } else if (signal.type === 'ice-candidate' && signal.candidate) {
-        try {
-          if (peer.remoteDescription) {
-            await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
-          }
-        } catch (err) { if (!ignoreOfferRef.current[from]) console.warn(`[WebRTC] ICE error:`, err); }
+        try { if (peer.remoteDescription) { await peer.addIceCandidate(new RTCIceCandidate(signal.candidate)); } } catch (err) { if (!ignoreOfferRef.current[from]) console.warn(`[WebRTC] ICE error:`, err); }
       }
     } catch (err) { console.error(`[WebRTC] Signaling error:`, err); }
   };
@@ -282,7 +280,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       const state = !isMuted;
       localStreamRef.current.getAudioTracks().forEach(t => t.enabled = !state);
       setIsMuted(state);
-      socket.emit('toggle_media', { room_id: roomId, type: 'mic', status: !state });
+      if (isJoined) socket.emit('toggle_media', { room_id: roomId, type: 'mic', status: !state });
     }
   };
 
@@ -293,7 +291,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       const isCurrentlyOff = !videoTrack.enabled;
       videoTrack.enabled = isCurrentlyOff;
       setIsCameraOff(!isCurrentlyOff);
-      socket.emit('toggle_media', { room_id: roomId, type: 'video', status: isCurrentlyOff });
+      if (isJoined) socket.emit('toggle_media', { room_id: roomId, type: 'video', status: isCurrentlyOff });
     }
   };
 
@@ -327,18 +325,16 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
 
   const handleLeave = () => { if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => track.stop()); onLeave(); };
 
-  // 🛠 Rigid Grid Reorder Logic
+  // 🛠 Drag Logic
   const handleDragUpdate = (event, info, draggedId) => {
     const centerX = info.point.x;
     const centerY = info.point.y;
-
     const targetId = participantOrder.find(id => {
       if (id === draggedId) return false;
       const rect = itemRefs.current[id]?.getBoundingClientRect();
       if (!rect) return false;
       return centerX > rect.left && centerX < rect.right && centerY > rect.top && centerY < rect.bottom;
     });
-
     if (targetId) {
       const oldIndex = participantOrder.indexOf(draggedId);
       const newIndex = participantOrder.indexOf(targetId);
@@ -360,6 +356,124 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     return 'grid-more';
   };
 
+  // 🏛 Lobby / Join UI
+  if (!isJoined) {
+    return (
+      <div className="lobby-root">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="lobby-container"
+        >
+          <div className="lobby-preview">
+            <video ref={localVideoRef} autoPlay muted playsInline />
+            {isCameraOff && (
+              <div className="lobby-avatar-placeholder">
+                <div className="lobby-avatar">?</div>
+              </div>
+            )}
+            <div className="lobby-overlay-controls">
+              <button onClick={toggleMute} className={`lobby-btn ${isMuted ? 'muted' : ''}`}>{isMuted ? <MicOff size={20}/> : <Mic size={20}/>}</button>
+              <button onClick={toggleCamera} className={`lobby-btn ${isCameraOff ? 'off' : ''}`}>{isCameraOff ? <VideoOff size={20}/> : <Video size={20}/>}</button>
+            </div>
+          </div>
+
+          <div className="lobby-details">
+            <h2>Ready to join?</h2>
+            <p>{remotesCount === 0 ? 'Be the first to join this conversation' : `${remotesCount} others are already in the call`}</p>
+            
+            <div className="lobby-test-area">
+              <div className="mic-meter-container">
+                <label><Volume2 size={14} /> Mic Level</label>
+                <div className="mic-meter-bg">
+                  <motion.div 
+                    className="mic-meter-fill"
+                    animate={{ width: `${localIsSpeaking ? 70 : 5}%` }}
+                  />
+                </div>
+              </div>
+              <button className="test-sound-btn" onClick={() => {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (ctx.state === 'suspended') ctx.resume();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(440, ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.5);
+              }}>
+                Test Speakers
+              </button>
+            </div>
+
+            <div className="lobby-settings">
+              <div className="lobby-select-group">
+                <label><Video size={14} /> Camera</label>
+                <select value={selectedDevices.videoId} onChange={(e) => changeDevice('video', e.target.value)}>
+                  {devices.video.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Camera'}</option>)}
+                </select>
+              </div>
+              <div className="lobby-select-group">
+                <label><Mic size={14} /> Microphone</label>
+                <select value={selectedDevices.audioId} onChange={(e) => changeDevice('audio', e.target.value)}>
+                  {devices.audio.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Microphone'}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="lobby-actions">
+              <button className="join-btn" onClick={() => setIsJoined(true)}>Join Meeting</button>
+              <button className="cancel-btn" onClick={onLeave}>Cancel</button>
+            </div>
+          </div>
+        </motion.div>
+
+        <style>{`
+          .lobby-root { position: fixed; inset: 0; background: #050508; z-index: 10000; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; color: white; padding: 20px; }
+          .lobby-container { display: flex; background: #0f172a; border-radius: 32px; overflow: hidden; max-width: 900px; width: 100%; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 40px 100px rgba(0,0,0,0.8); }
+          .lobby-preview { width: 60%; background: #000; position: relative; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center; }
+          .lobby-preview video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+          .lobby-overlay-controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; }
+          .lobby-btn { width: 50px; height: 50px; border-radius: 50%; border: none; background: rgba(255,255,255,0.15); color: white; cursor: pointer; backdrop-filter: blur(10px); transition: 0.3s; display: flex; align-items: center; justify-content: center; }
+          .lobby-btn:hover { background: rgba(255,255,255,0.25); transform: translateY(-2px); }
+          .lobby-btn.muted, .lobby-btn.off { background: #ef4444; }
+          .lobby-details { width: 40%; padding: 40px; display: flex; flex-direction: column; justify-content: center; }
+          .lobby-details h2 { margin: 0 0 10px 0; font-size: 1.8rem; letter-spacing: -0.02em; }
+          .lobby-details p { color: #94a3b8; margin: 0 0 20px 0; font-size: 0.9rem; }
+          
+          .lobby-test-area { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; margin-bottom: 25px; border: 1px solid rgba(255,255,255,0.05); }
+          .mic-meter-container { margin-bottom: 15px; }
+          .mic-meter-container label { font-size: 0.7rem; color: #64748b; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+          .mic-meter-bg { height: 6px; background: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden; }
+          .mic-meter-fill { height: 100%; background: #6366f1; border-radius: 10px; box-shadow: 0 0 15px #6366f1; }
+          .test-sound-btn { width: 100%; padding: 10px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 12px; color: #818cf8; font-size: 0.75rem; font-weight: 700; cursor: pointer; transition: 0.3s; }
+          .test-sound-btn:hover { background: rgba(99, 102, 241, 0.2); }
+
+          .lobby-settings { display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; }
+          .lobby-select-group { display: flex; flex-direction: column; gap: 8px; }
+          .lobby-select-group label { font-size: 0.75rem; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 6px; }
+          .lobby-select-group select { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 12px; font-size: 0.85rem; outline: none; transition: 0.3s; width: 100%; cursor: pointer; appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 12px center; padding-right: 40px;
+          }
+          .lobby-select-group select option { background: #0f172a; color: white; }
+          .lobby-actions { display: flex; gap: 15px; }
+          .join-btn { flex: 2; padding: 15px; background: #6366f1; border: none; border-radius: 16px; color: white; font-weight: 700; font-size: 1rem; cursor: pointer; transition: 0.3s; }
+          .join-btn:hover { background: #4f46e5; box-shadow: 0 10px 20px rgba(99, 102, 241, 0.4); transform: translateY(-2px); }
+          .cancel-btn { flex: 1; padding: 15px; background: transparent; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; color: #94a3b8; cursor: pointer; transition: 0.3s; font-weight: 600; }
+          .cancel-btn:hover { color: white; background: rgba(255,255,255,0.05); }
+          .lobby-avatar-placeholder { position: absolute; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; }
+          .lobby-avatar { width: 120px; height: 120px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #a855f7); display: flex; align-items: center; justify-content: center; font-size: 3rem; font-weight: 800; border: 4px solid rgba(255,255,255,0.2); }
+          @media (max-width: 800px) { .lobby-container { flex-direction: column; } .lobby-preview, .lobby-details { width: 100%; } }
+        `}</style>
+      </div>
+    );
+  }
+
   return (
     <div className="call-root-wrapper">
       <header className="call-header">
@@ -380,13 +494,13 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
             if (!isLocal && !user) return null;
 
             return (
-              <motion.div
+              <motion.div 
                 key={id}
                 layout
                 drag
                 dragConstraints={containerRef}
                 dragSnapToOrigin={true}
-                dragElastic={0.01} // Very rigid drag
+                dragElastic={0.01}
                 onDrag={(e, info) => handleDragUpdate(e, info, id)}
                 whileDrag={{ zIndex: 50, scale: 0.95, opacity: 0.8 }}
                 ref={el => itemRefs.current[id] = el}
@@ -406,11 +520,11 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
                     </div>
                   </>
                 ) : (
-                  <RemoteVideo
-                    socketId={id}
-                    stream={remoteStreams[id]?.stream}
-                    user={user}
-                    onSpeaking={(speaking) => setRemoteAudioSpeaks(prev => speaking === prev[id] ? prev : ({ ...prev, [id]: speaking }))}
+                  <RemoteVideo 
+                    socketId={id} 
+                    stream={remoteStreams[id]?.stream} 
+                    user={user} 
+                    onSpeaking={(speaking) => setRemoteAudioSpeaks(prev => speaking === prev[id] ? prev : ({...prev, [id]: speaking}))}
                   />
                 )}
               </motion.div>
@@ -431,7 +545,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
 
       <AnimatePresence>
         {showSettings && (
-          <motion.div
+          <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
@@ -441,24 +555,14 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
               <h3>Device Settings</h3>
               <div className="setting-group">
                 <label><Video size={16} /> Camera</label>
-                <select
-                  value={selectedDevices.videoId}
-                  onChange={(e) => changeDevice('video', e.target.value)}
-                >
-                  {devices.video.map(d => (
-                    <option key={d.deviceId} value={d.deviceId}>{d.label || 'Camera ' + d.deviceId.slice(0, 5)}</option>
-                  ))}
+                <select value={selectedDevices.videoId} onChange={(e) => changeDevice('video', e.target.value)}>
+                  {devices.video.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Camera'}</option>)}
                 </select>
               </div>
               <div className="setting-group">
                 <label><Mic size={16} /> Microphone</label>
-                <select
-                  value={selectedDevices.audioId}
-                  onChange={(e) => changeDevice('audio', e.target.value)}
-                >
-                  {devices.audio.map(d => (
-                    <option key={d.deviceId} value={d.deviceId}>{d.label || 'Mic ' + d.deviceId.slice(0, 5)}</option>
-                  ))}
+                <select value={selectedDevices.audioId} onChange={(e) => changeDevice('audio', e.target.value)}>
+                  {devices.audio.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Microphone'}</option>)}
                 </select>
               </div>
               <button className="close-settings" onClick={() => setShowSettings(false)}>Done</button>
@@ -468,32 +572,6 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       </AnimatePresence>
 
       <style>{`
-        .settings-modal { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 320px; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
-        .settings-content h3 { margin: 0 0 20px 0; font-size: 1rem; color: #f8fafc; font-weight: 700; }
-        .setting-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
-        .setting-group label { font-size: 0.75rem; color: #94a3b8; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-        .setting-group select { 
-          background: #1e293b url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
-          border: 1px solid rgba(255,255,255,0.1); 
-          border-radius: 12px; 
-          color: white; 
-          padding: 12px; 
-          padding-right: 40px; 
-          font-size: 0.85rem; 
-          outline: none; 
-          transition: 0.3s; 
-          width: 100%; 
-          cursor: pointer; 
-          -webkit-appearance: none; 
-          -moz-appearance: none; 
-          appearance: none; 
-        }
-        .setting-group select option { background: #0f172a; color: white; padding: 10px; }
-        .setting-group select:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
-        .close-settings { width: 100%; padding: 14px; background: #6366f1; border: none; border-radius: 14px; color: white; font-weight: 700; font-size: 0.9rem; cursor: pointer; margin-top: 10px; transition: 0.3s; }
-        .close-settings:hover { background: #4f46e5; transform: scale(1.02); }
-        .action-btn.active { background: rgba(99, 102, 241, 0.2); border-color: #6366f1; color: #6366f1; }
-        
         .call-root-wrapper { position: fixed; inset: 0; height: 100dvh; background: #050508; z-index: 9999; display: flex; flex-direction: column; color: white; overflow: hidden; font-family: 'Inter', sans-serif; }
         .call-header { padding: 12px 30px; background: rgba(0,0,0,0.6); flex-shrink: 0; display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .header-info { display: flex; gap: 10px; align-items: center; }
@@ -522,6 +600,18 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
         .action-btn.muted, .action-btn.camera-off { color: #f87171; background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.3); }
         .action-btn.sharing { color: #34d399; background: rgba(16,185,129,0.2); border-color: rgba(16,185,129,0.3); }
         .action-btn.end-call { background: #ef4444; border: none; width: 80px; }
+        .action-btn.active { background: rgba(99, 102, 241, 0.2); border-color: #6366f1; color: #6366f1; }
+        .settings-modal { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 320px; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .settings-content h3 { margin: 0 0 20px 0; font-size: 1rem; color: #f8fafc; font-weight: 700; }
+        .setting-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
+        .setting-group label { font-size: 0.75rem; color: #94a3b8; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+        .setting-group select { 
+          background: #1e293b url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
+          border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 12px; padding-right: 40px; font-size: 0.85rem; outline: none; transition: 0.3s; width: 100%; cursor: pointer; appearance: none;
+        }
+        .setting-group select option { background: #0f172a; color: white; }
+        .setting-group select:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
+        .close-settings { width: 100%; padding: 14px; background: #6366f1; border: none; border-radius: 14px; color: white; font-weight: 700; font-size: 0.9rem; cursor: pointer; margin-top: 10px; transition: 0.3s; }
         @media (max-width: 900px) { .video-container { aspect-ratio: 1/1; height: auto; } }
       `}</style>
     </div>
