@@ -53,6 +53,20 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
           socket.on('user_left_call', handleUserLeft);
           
           socket.emit('join_call', { room_id: roomId });
+          
+          socket.on('user_toggle_media', ({ socket_id, type, status }) => {
+            setCallParticipants(prev => {
+              const user = prev[socket_id];
+              if (!user) return prev;
+              return {
+                ...prev,
+                [socket_id]: { 
+                  ...user, 
+                  [type === 'mic' ? 'isMuted' : 'isCameraOff']: !status 
+                }
+              };
+            });
+          });
         }
       } catch (err) {
         console.error('[Call] Init failed:', err);
@@ -290,6 +304,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       const state = !isMuted;
       localStreamRef.current.getAudioTracks().forEach(t => t.enabled = !state);
       setIsMuted(state);
+      socket.emit('toggle_media', { room_id: roomId, type: 'mic', status: !state });
     }
   };
 
@@ -302,6 +317,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       const isCurrentlyOff = !videoTrack.enabled;
       videoTrack.enabled = isCurrentlyOff;
       setIsCameraOff(!isCurrentlyOff);
+      socket.emit('toggle_media', { room_id: roomId, type: 'video', status: isCurrentlyOff });
     } else {
       // No camera track! (Joined with audio only)
       try {
@@ -540,7 +556,9 @@ const RemoteVideo = ({ stream, user, socketId }) => {
           </div>
         </div>
       )}
-      <div className="participant-label">{user?.name || 'Guest'}</div>
+      <div className="participant-label">
+        {user?.name || 'Guest'} {user?.isMuted && <MicOff size={10} style={{ color: '#ef4444' }} />}
+      </div>
     </div>
   );
 };

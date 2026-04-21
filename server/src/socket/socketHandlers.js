@@ -195,6 +195,16 @@ export const registerSocketHandlers = (io, socket) => {
         });
     });
 
+    socket.on('toggle_media', (data) => {
+        const { room_id, type, status } = data;
+        const cleanRoomId = parseInt(room_id);
+        socket.to(`room_${cleanRoomId}`).emit('user_toggle_media', {
+            socket_id: socket.id,
+            type,
+            status
+        });
+    });
+
     socket.on('leave_call', (data) => {
         const { room_id } = data;
         const cleanRoomId = parseInt(room_id);
