@@ -14,7 +14,7 @@ services:
       - "9000:9000"
     environment:
       - PORT=9000
-      - DATABASE_URL=postgresql://postgres:room_notallowed@109.123.251.103:65535/notallowedroom
+      - DATABASE_URL=
     restart: always
 
   # This service uses the same 'notallowedroom' image
