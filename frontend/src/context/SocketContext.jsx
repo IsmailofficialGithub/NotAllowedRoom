@@ -9,7 +9,7 @@ export const SocketProvider = ({ children }) => {
   const { token, user } = useAuth();
 
   useEffect(() => {
-    const newSocket = io('http://localhost:9000', {
+    const newSocket = io(import.meta.env.VITE_BACKEND_URL, {
       auth: { token }
     });
 

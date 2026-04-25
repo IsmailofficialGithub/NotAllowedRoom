@@ -88,7 +88,7 @@ const ChatRoom = () => {
         user_id: user?.id, 
         guest_id: guestId 
       });
-      navigator.sendBeacon('http://localhost:9000/api/v1/rooms/leave', new Blob([data], { type: 'application/json' }));
+      navigator.sendBeacon(`${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms/leave`, new Blob([data], { type: 'application/json' }));
     };
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
@@ -221,7 +221,7 @@ const ChatRoom = () => {
 
       // Attempt to join first to verify access
       console.log(`🚀 [JoinRoom] Request: room=${id}, user=${user?.id}, guest=${guestId}`);
-      const joinRes = await axios.post(`http://localhost:9000/api/v1/rooms/join`, {
+      const joinRes = await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms/join`, {
         room_id: id,
         password: joinPassword || password,
         guest_name: guestName,
@@ -239,8 +239,8 @@ const ChatRoom = () => {
       }
 
       const [msgRes, partRes] = await Promise.all([
-        axios.get(`http://localhost:9000/api/v1/rooms/${id}/messages`, { headers }),
-        axios.get(`http://localhost:9000/api/v1/rooms/${id}/participants`, { headers })
+        axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms/${id}/messages`, { headers }),
+        axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms/${id}/participants`, { headers })
       ]);
 
       setMessages(msgRes.data.data);

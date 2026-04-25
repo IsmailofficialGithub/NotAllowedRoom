@@ -29,7 +29,7 @@ const Home = () => {
   const { user, logout, token } = useAuth();
   const navigate = useNavigate();
 
-  const API_URL = 'http://localhost:9000/api/v1/rooms';
+  const API_URL = `${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms`;
 
   useEffect(() => {
     fetchRooms();

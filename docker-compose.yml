@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # This service will build the 'notallowedroom' image once
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: notallowedroom
+    container_name: notallowedoom_backend
+    working_dir: /app/server
+    command: npm start
+    ports:
+      - "9000:9000"
+    environment:
+      - PORT=9000
+      - DATABASE_URL=postgresql://postgres:room_notallowed@109.123.251.103:65535/notallowedroom
+    restart: always
+
+  # This service uses the same 'notallowedroom' image
+  frontend:
+    image: notallowedroom
+    container_name: notallowedroom_frontend
+    working_dir: /app/frontend
+    # Serve the 'dist' folder created during the image build
+    command: serve -s dist -p 80
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
