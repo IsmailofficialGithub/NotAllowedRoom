@@ -19,7 +19,31 @@ const server = createServer(app);
 import { setupSocket } from './socket/socketHandlers.js';
 const io = setupSocket(server);
 
-app.use(cors());
+// Parse CORS origins
+let allowedOrigins = ['*'];
+try {
+    if (process.env.FRONT_CORS) {
+        // Convert Python-style list or JSON string to array
+        const cleaned = process.env.FRONT_CORS.replace(/'/g, '"');
+        allowedOrigins = JSON.parse(cleaned);
+    }
+} catch (e) {
+    console.error("Error parsing FRONT_CORS:", e.message);
+}
+
+const corsOptions = {
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 app.get('/', (req, res) => {

@@ -264,10 +264,27 @@ export const registerSocketHandlers = (io, socket) => {
 import { Server } from 'socket.io';
 
 export const setupSocket = (server) => {
+    let allowedOrigins = ['*'];
+    try {
+        if (process.env.FRONT_CORS) {
+            const cleaned = process.env.FRONT_CORS.replace(/'/g, '"');
+            allowedOrigins = JSON.parse(cleaned);
+        }
+    } catch (e) {
+        console.error("Error parsing FRONT_CORS for socket:", e.message);
+    }
+
     const io = new Server(server, {
         cors: {
-            origin: "*",
-            methods: ["GET", "POST"]
+            origin: (origin, callback) => {
+                if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+                    callback(null, true);
+                } else {
+                    callback(new Error('Not allowed by CORS'));
+                }
+            },
+            methods: ["GET", "POST"],
+            credentials: true
         }
     });
 
