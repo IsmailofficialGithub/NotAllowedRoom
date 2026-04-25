@@ -268,7 +268,7 @@ export const setupSocket = (server) => {
     try {
         if (process.env.FRONT_CORS) {
             const cleaned = process.env.FRONT_CORS.replace(/'/g, '"');
-            allowedOrigins = JSON.parse(cleaned);
+            allowedOrigins = JSON.parse(cleaned).map(o => typeof o === 'string' ? o.trim().replace(/\/$/, "") : o);
         }
     } catch (e) {
         console.error("Error parsing FRONT_CORS for socket:", e.message);

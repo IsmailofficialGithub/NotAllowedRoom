@@ -23,9 +23,9 @@ const io = setupSocket(server);
 let allowedOrigins = ['*'];
 try {
     if (process.env.FRONT_CORS) {
-        // Convert Python-style list or JSON string to array
+        // Convert Python-style list or JSON string to array and sanitize (remove trailing slashes)
         const cleaned = process.env.FRONT_CORS.replace(/'/g, '"');
-        allowedOrigins = JSON.parse(cleaned);
+        allowedOrigins = JSON.parse(cleaned).map(o => typeof o === 'string' ? o.trim().replace(/\/$/, "") : o);
     }
 } catch (e) {
     console.error("Error parsing FRONT_CORS:", e.message);
