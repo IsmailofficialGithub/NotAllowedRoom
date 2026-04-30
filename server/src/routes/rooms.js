@@ -7,9 +7,9 @@ import { protect, optionalProtect } from '../middleware/authMiddleware.js';
 const router = express.Router();
 
 // Room Management
-router.post('/create', protect, CreateRoom);
+router.post('/create', optionalProtect, CreateRoom);
 router.get('/', optionalProtect, GetRooms);
-router.delete('/:id', protect, DeleteRoom);
+router.delete('/:id', optionalProtect, DeleteRoom);
 
 // Participants
 router.post('/join', optionalProtect, JoinRoom);

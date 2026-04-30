@@ -21,8 +21,8 @@ export const Register = async (req, res) => {
         }
 
         const result = await pool.query(
-            "INSERT INTO user_profile (name, email, hashed_password, created_at, updated_at, is_active, is_deleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
-            [user.name, user.email, user.hashedPassword, user.createdAt, user.updatedAt, user.isActive, user.isDeleted]
+            "INSERT INTO user_profile (name, email, hashed_password, created_at, updated_at, is_active, is_deleted, isverified) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+            [user.name, user.email, user.hashedPassword, user.createdAt, user.updatedAt, user.isActive, user.isDeleted, true]
         );
 
         console.log('User registered successfully');

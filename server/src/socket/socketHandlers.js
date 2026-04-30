@@ -268,16 +268,17 @@ export const setupSocket = (server) => {
     let allowedOrigins = ['*'];
     if (process.env.FRONT_CORS) {
         try {
-            const corsValue = process.env.FRONT_CORS.trim();
+            let corsValue = process.env.FRONT_CORS.trim();
+            
+            // Remove brackets if they exist
             if (corsValue.startsWith('[') && corsValue.endsWith(']')) {
-                const cleaned = corsValue.replace(/'/g, '"');
-                allowedOrigins = JSON.parse(cleaned);
-            } else {
-                allowedOrigins = corsValue.split(',').map(o => o.trim());
+                corsValue = corsValue.slice(1, -1);
             }
-            allowedOrigins = allowedOrigins.map(o => 
-                typeof o === 'string' ? o.trim().replace(/\/$/, "") : o
-            );
+
+            // Split by comma and clean up quotes
+            allowedOrigins = corsValue.split(',').map(origin => {
+                return origin.trim().replace(/^['"]|['"]$/g, '').replace(/\/$/, "");
+            });
         } catch (e) {
             console.error("❌ Error parsing FRONT_CORS for socket:", e.message);
             allowedOrigins = process.env.FRONT_CORS.split(',').map(o => o.trim().replace(/\/$/, ""));

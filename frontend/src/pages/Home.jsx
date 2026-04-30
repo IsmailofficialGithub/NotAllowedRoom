@@ -25,6 +25,15 @@ const Home = () => {
   const [newRoomName, setNewRoomName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [guestId, setGuestId] = useState(() => {
+    const saved = localStorage.getItem('guest_id');
+    if (saved) return saved;
+    const newId = crypto.randomUUID();
+    localStorage.setItem('guest_id', newId);
+    return newId;
+  });
+  const [guestName, setGuestName] = useState(localStorage.getItem('guest_name') || '');
+  const [showGuestPrompt, setShowGuestPrompt] = useState(false);
 
   const { user, logout, token } = useAuth();
   const navigate = useNavigate();
@@ -71,7 +80,8 @@ const Home = () => {
 
   const fetchRooms = async () => {
     try {
-      const response = await axios.get(API_URL);
+      const gId = guestId || localStorage.getItem('guest_id');
+      const response = await axios.get(`${API_URL}?guest_id=${gId}`);
       setRooms(response.data.data);
     } catch (error) {
       console.error('Error fetching rooms:', error);
@@ -81,16 +91,32 @@ const Home = () => {
   };
 
   const handleCreateRoom = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
+    
+    if (!token && !guestName.trim()) {
+      setShowGuestPrompt(true);
+      setShowCreateModal(false);
+      return;
+    }
+
     try {
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const response = await axios.post(`${API_URL}/create`, 
         { 
           room_name: newRoomName,
           is_private: isPrivate,
-          room_password: isPrivate ? roomPassword : null
+          room_password: isPrivate ? roomPassword : null,
+          guest_name: guestName,
+          guest_id: guestId
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers }
       );
+      
+      if (response.data.guest_id) {
+        setGuestId(response.data.guest_id);
+        localStorage.setItem('guest_id', response.data.guest_id);
+      }
+
       setRooms([response.data.room, ...rooms]);
       setNewRoomName('');
       setRoomPassword('');
@@ -101,6 +127,15 @@ const Home = () => {
       navigate(`/room/${response.data.room.id}`);
     } catch (error) {
       console.error('Error creating room:', error);
+    }
+  };
+
+  const handleGuestSubmit = (e) => {
+    e.preventDefault();
+    if (guestName.trim()) {
+      localStorage.setItem('guest_name', guestName);
+      setShowGuestPrompt(false);
+      setShowCreateModal(true); // Re-open create modal after name set
     }
   };
 
@@ -295,6 +330,41 @@ const Home = () => {
                 </button>
                 <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
                   Create
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Guest Name Prompt */}
+      {showGuestPrompt && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 1001, background: 'rgba(0,0,0,0.8)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass card" style={{ width: '100%', maxWidth: '350px' }}>
+            <h2 style={{ marginBottom: '16px' }}>Enter your Name</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '0.875rem' }}>You're creating a room as a guest. Please provide a name.</p>
+            <form onSubmit={handleGuestSubmit}>
+              <div className="input-group">
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Your Name"
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  required
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                <button type="button" onClick={() => setShowGuestPrompt(false)} className="btn btn-secondary" style={{ flex: 1 }}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                  Continue
                 </button>
               </div>
             </form>
