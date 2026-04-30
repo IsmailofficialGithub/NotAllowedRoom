@@ -31,6 +31,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   const hasJoinedCall = useRef(false);
   const makingOfferRef = useRef({});
   const ignoreOfferRef = useRef({});
+  const iceCandidatesQueue = useRef({}); // { socketId: [candidates] }
   const containerRef = useRef(null);
   const itemRefs = useRef({});
 
@@ -211,42 +212,76 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
 
   const createPeer = (targetSocketId, user, isInitiator) => {
     if (peersRef.current[targetSocketId]) return peersRef.current[targetSocketId];
+    
+    console.log(`[WebRTC] Creating peer for ${targetSocketId} (Initiator: ${isInitiator})`);
+    
     const peer = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
+    
     peersRef.current[targetSocketId] = peer;
     makingOfferRef.current[targetSocketId] = false;
     ignoreOfferRef.current[targetSocketId] = false;
+    iceCandidatesQueue.current[targetSocketId] = [];
+
     peer.onicecandidate = (event) => {
-      if (event.candidate) socket.emit('call_signal', { to: targetSocketId, signal: { type: 'ice-candidate', candidate: event.candidate } });
+      if (event.candidate) {
+        socket.emit('call_signal', { 
+          to: targetSocketId, 
+          signal: { type: 'ice-candidate', candidate: event.candidate } 
+        });
+      }
     };
+
     peer.ontrack = (event) => {
+      console.log(`[WebRTC] Received track from ${targetSocketId}`);
       const [remoteStream] = event.streams;
       setRemoteStreams(prev => ({ ...prev, [targetSocketId]: { stream: remoteStream, user } }));
     };
+
     peer.onnegotiationneeded = async () => {
       try {
         if (makingOfferRef.current[targetSocketId] || peer.signalingState !== 'stable') return;
+        
+        console.log(`[WebRTC] Negotiation needed for ${targetSocketId}`);
         makingOfferRef.current[targetSocketId] = true;
         await peer.setLocalDescription();
         socket.emit('call_signal', { to: targetSocketId, signal: peer.localDescription });
-      } catch (err) { console.error(`[WebRTC] Negotiation failed:`, err); } finally { makingOfferRef.current[targetSocketId] = false; }
+      } catch (err) { 
+        console.error(`[WebRTC] Negotiation failed for ${targetSocketId}:`, err); 
+      } finally { 
+        makingOfferRef.current[targetSocketId] = false; 
+      }
     };
-    if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => peer.addTrack(track, localStreamRef.current));
+
+    peer.onconnectionstatechange = () => {
+      console.log(`[WebRTC] Connection state with ${targetSocketId}: ${peer.connectionState}`);
+    };
+
+    if (localStreamRef.current) {
+      console.log(`[WebRTC] Adding tracks to peer ${targetSocketId}`);
+      localStreamRef.current.getTracks().forEach(track => {
+        peer.addTrack(track, localStreamRef.current);
+      });
+    }
+
     return peer;
   };
 
   const handleUserJoined = ({ socket_id, user }) => {
     if (socket_id === socket.id) return;
+    console.log(`[WebRTC] User joined: ${socket_id}`);
     setCallParticipants(prev => ({ ...prev, [socket_id]: user }));
     createPeer(socket_id, user, true);
   };
 
   const handleCurrentParticipants = ({ participants }) => {
+    console.log(`[WebRTC] Current participants:`, participants);
     const newParticipants = {};
     participants.forEach(({ socket_id, user }) => {
       if (socket_id !== socket.id) {
-        newParticipants[socket_id] = user; createPeer(socket_id, user, true);
+        newParticipants[socket_id] = user; 
+        createPeer(socket_id, user, true);
       }
     });
     setCallParticipants(prev => ({ ...prev, ...newParticipants }));
@@ -255,27 +290,73 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   const handleSignal = async ({ signal, from, user }) => {
     let peer = peersRef.current[from];
     if (!peer) peer = createPeer(from, user, false);
+
     try {
       if (signal.type === 'offer') {
         const polite = socket.id > from;
         const offerCollision = (makingOfferRef.current[from] || peer.signalingState !== 'stable');
+        
         ignoreOfferRef.current[from] = !polite && offerCollision;
-        if (ignoreOfferRef.current[from]) return;
+        if (ignoreOfferRef.current[from]) {
+          console.log(`[WebRTC] Ignoring offer from ${from} (collision)`);
+          return;
+        }
+
+        console.log(`[WebRTC] Handling offer from ${from}`);
         await peer.setRemoteDescription(new RTCSessionDescription(signal));
         await peer.setLocalDescription();
         socket.emit('call_signal', { to: from, signal: peer.localDescription });
+        
+        // Process queued candidates
+        if (iceCandidatesQueue.current[from]) {
+          console.log(`[WebRTC] Processing ${iceCandidatesQueue.current[from].length} queued candidates for ${from}`);
+          for (const candidate of iceCandidatesQueue.current[from]) {
+            await peer.addIceCandidate(candidate).catch(e => console.warn(e));
+          }
+          iceCandidatesQueue.current[from] = [];
+        }
+
       } else if (signal.type === 'answer') {
+        console.log(`[WebRTC] Handling answer from ${from}`);
         if (peer.signalingState === 'have-local-offer') {
           await peer.setRemoteDescription(new RTCSessionDescription(signal));
+          
+          // Process queued candidates
+          if (iceCandidatesQueue.current[from]) {
+            console.log(`[WebRTC] Processing ${iceCandidatesQueue.current[from].length} queued candidates for ${from}`);
+            for (const candidate of iceCandidatesQueue.current[from]) {
+              await peer.addIceCandidate(candidate).catch(e => console.warn(e));
+            }
+            iceCandidatesQueue.current[from] = [];
+          }
         }
       } else if (signal.type === 'ice-candidate' && signal.candidate) {
-        try { if (peer.remoteDescription) { await peer.addIceCandidate(new RTCIceCandidate(signal.candidate)); } } catch (err) { if (!ignoreOfferRef.current[from]) console.warn(`[WebRTC] ICE error:`, err); }
+        const candidate = new RTCIceCandidate(signal.candidate);
+        if (peer.remoteDescription && peer.remoteDescription.type) {
+          try {
+            await peer.addIceCandidate(candidate);
+          } catch (err) {
+            if (!ignoreOfferRef.current[from]) console.warn(`[WebRTC] ICE error for ${from}:`, err);
+          }
+        } else {
+          // Queue candidate
+          if (!iceCandidatesQueue.current[from]) iceCandidatesQueue.current[from] = [];
+          iceCandidatesQueue.current[from].push(candidate);
+          console.log(`[WebRTC] Queued ICE candidate from ${from}`);
+        }
       }
-    } catch (err) { console.error(`[WebRTC] Signaling error:`, err); }
+    } catch (err) { 
+      console.error(`[WebRTC] Signaling error with ${from}:`, err); 
+    }
   };
 
   const handleUserLeft = ({ socket_id }) => {
-    if (peersRef.current[socket_id]) { peersRef.current[socket_id].close(); delete peersRef.current[socket_id]; }
+    console.log(`[WebRTC] User left: ${socket_id}`);
+    if (peersRef.current[socket_id]) { 
+      peersRef.current[socket_id].close(); 
+      delete peersRef.current[socket_id]; 
+    }
+    delete iceCandidatesQueue.current[socket_id];
     setCallParticipants(prev => { const next = { ...prev }; delete next[socket_id]; return next; });
     setRemoteStreams(prev => { const next = { ...prev }; delete next[socket_id]; return next; });
   };
@@ -439,7 +520,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
         </motion.div>
 
         <style>{`
-          .lobby-root { position: fixed; inset: 0; background: #050508; z-index: 10000; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; color: white; padding: 20px; }
+          .lobby-root { position: fixed; inset: 0; background: #050508; z-index: 10000; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; color: white; padding: 20px; overflow-y: auto; }
           .lobby-container { display: flex; background: #0f172a; border-radius: 32px; overflow: hidden; max-width: 900px; width: 100%; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 40px 100px rgba(0,0,0,0.8); }
           .lobby-preview { width: 60%; background: #000; position: relative; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center; }
           .lobby-preview video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
@@ -474,7 +555,24 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
           .cancel-btn:hover { color: white; background: rgba(255,255,255,0.05); }
           .lobby-avatar-placeholder { position: absolute; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; }
           .lobby-avatar { width: 120px; height: 120px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #a855f7); display: flex; align-items: center; justify-content: center; font-size: 3rem; font-weight: 800; border: 4px solid rgba(255,255,255,0.2); }
-          @media (max-width: 800px) { .lobby-container { flex-direction: column; } .lobby-preview, .lobby-details { width: 100%; } }
+          
+          @media (max-width: 800px) { 
+            .lobby-root { padding: 10px; align-items: flex-start; }
+            .lobby-container { flex-direction: column; border-radius: 20px; margin-top: 10px; margin-bottom: 20px; } 
+            .lobby-preview, .lobby-details { width: 100%; } 
+            .lobby-details { padding: 25px; }
+            .lobby-details h2 { font-size: 1.5rem; }
+            .lobby-actions { flex-direction: column; }
+            .join-btn { order: 1; }
+            .cancel-btn { order: 2; border: none; }
+          }
+          
+          @media (max-height: 700px) and (max-width: 800px) {
+            .lobby-preview { aspect-ratio: 21/9; }
+            .lobby-avatar { width: 80px; height: 80px; font-size: 2rem; }
+            .lobby-test-area { display: none; }
+            .lobby-settings { margin-bottom: 15px; }
+          }
         `}</style>
       </div>
     );
@@ -541,11 +639,30 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
 
       <footer className="call-controls">
         <div className="controls-inner">
-          <button onClick={toggleMute} className={`action-btn ${isMuted ? 'muted' : ''}`}><MicOff /><label>Mute</label></button>
-          <button onClick={toggleCamera} disabled={isScreenSharing} className={`action-btn ${isCameraOff ? 'camera-off' : ''}`}><VideoOff /><label>Camera</label></button>
-          <button onClick={toggleScreenShare} className={`action-btn ${isScreenSharing ? 'sharing' : ''}`}><Maximize2 /><label>Share</label></button>
-          <button onClick={() => setShowSettings(!showSettings)} className={`action-btn ${showSettings ? 'active' : ''}`}><Settings /><label>Settings</label></button>
-          <button onClick={handleLeave} className="action-btn end-call"><PhoneOff /><label>End</label></button>
+          <button onClick={toggleMute} className={`action-btn ${isMuted ? 'muted' : ''}`}>
+            {isMuted ? <MicOff /> : <Mic />}
+            <label>{isMuted ? 'Unmute' : 'Mute'}</label>
+          </button>
+          <button 
+            onClick={toggleCamera} 
+            disabled={isScreenSharing} 
+            className={`action-btn ${isCameraOff ? 'camera-off' : ''}`}
+          >
+            {isCameraOff ? <VideoOff /> : <Video />}
+            <label>{isCameraOff ? 'Camera On' : 'Camera Off'}</label>
+          </button>
+          <button onClick={toggleScreenShare} className={`action-btn ${isScreenSharing ? 'sharing' : ''}`}>
+            <Maximize2 />
+            <label>Share</label>
+          </button>
+          <button onClick={() => setShowSettings(!showSettings)} className={`action-btn ${showSettings ? 'active' : ''}`}>
+            <Settings />
+            <label>Settings</label>
+          </button>
+          <button onClick={handleLeave} className="action-btn end-call">
+            <PhoneOff />
+            <label>End</label>
+          </button>
         </div>
       </footer>
 
@@ -579,46 +696,70 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
 
       <style>{`
         .call-root-wrapper { position: fixed; inset: 0; height: 100dvh; background: #050508; z-index: 9999; display: flex; flex-direction: column; color: white; overflow: hidden; font-family: 'Inter', sans-serif; }
-        .call-header { padding: 12px 30px; background: rgba(0,0,0,0.6); flex-shrink: 0; display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .call-header { padding: 12px 20px; background: rgba(0,0,0,0.8); flex-shrink: 0; display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); backdrop-filter: blur(20px); }
         .header-info { display: flex; gap: 10px; align-items: center; }
-        .header-info h1 { font-size: 0.95rem; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
-        .room-subtext { font-size: 0.65rem; color: #64748b; font-weight: 500; }
+        .header-info h1 { font-size: 0.9rem; margin: 0; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+        .room-subtext { font-size: 0.6rem; color: #64748b; font-weight: 500; }
         .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 10px #10b981; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 0.4; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); } 100% { opacity: 0.4; transform: scale(0.9); } }
-        .video-grid-container { flex: 1; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 20px; position: relative; }
-        .video-grid { display: grid; gap: 16px; width: 100%; height: 100%; max-width: none; margin: 0; }
+        
+        .video-grid-container { flex: 1; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 16px; position: relative; }
+        .video-grid { display: grid; gap: 12px; width: 100%; height: 100%; max-width: 1400px; margin: 0 auto; }
+        
+        /* Responsive Grid Logic */
         .video-grid.grid-1 { grid-template-columns: 1fr; }
         .video-grid.grid-2 { grid-template-columns: 1fr 1fr; }
-        .video-grid.grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
-        .video-grid.grid-more { grid-template-columns: repeat(auto-fit, minmax(30%, 1fr)); }
-        .video-container { background: #0f172a; border-radius: 20px; overflow: hidden; position: relative; border: 2px solid rgba(255,255,255,0.05); transition: border-color 0.3s; background-image: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); cursor: grab; touch-action: none; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; transform-origin: center; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
-        .video-container video { width: 100%; height: 100%; object-fit: cover; border-radius: 18px; }
-        .video-container.local video { transform: scaleX(-1); }
-        .active-speaker { border-color: #6366f1 !important; box-shadow: 0 0 40px rgba(99, 102, 241, 0.5); }
-        .participant-label { position: absolute; bottom: 15px; left: 15px; background: rgba(15, 23, 42, 0.8); padding: 6px 14px; border-radius: 10px; font-size: 0.75rem; backdrop-filter: blur(12px); display: flex; align-items: center; gap: 8px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); }
-        .camera-off-placeholder { position: absolute; inset: 0; background: #0f172a; display: flex; align-items: center; justify-content: center; }
-        .user-avatar { width: 100px; height: 100px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #a855f7); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 2.5rem; box-shadow: 0 15px 35px rgba(0,0,0,0.7); border: 4px solid rgba(255,255,255,0.2); }
-        .call-controls { padding: 40px; background: linear-gradient(transparent, rgba(0,0,0,0.98)); flex-shrink: 0; display: flex; justify-content: center; }
-        .controls-inner { display: flex; gap: 20px; background: rgba(15, 23, 42, 0.95); padding: 16px 32px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.12); backdrop-filter: blur(30px); }
-        .action-btn { width: 64px; height: 64px; border-radius: 18px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.05); color: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: all 0.3s; }
-        .action-btn:hover { background: rgba(255,255,255,0.15); transform: translateY(-4px); }
-        .action-btn label { font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.8; }
-        .action-btn.muted, .action-btn.camera-off { color: #f87171; background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.3); }
-        .action-btn.sharing { color: #34d399; background: rgba(16,185,129,0.2); border-color: rgba(16,185,129,0.3); }
-        .action-btn.end-call { background: #ef4444; border: none; width: 80px; }
-        .action-btn.active { background: rgba(99, 102, 241, 0.2); border-color: #6366f1; color: #6366f1; }
-        .settings-modal { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 320px; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
-        .settings-content h3 { margin: 0 0 20px 0; font-size: 1rem; color: #f8fafc; font-weight: 700; }
-        .setting-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
-        .setting-group label { font-size: 0.75rem; color: #94a3b8; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-        .setting-group select { 
-          background: #1e293b url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
-          border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 12px; padding-right: 40px; font-size: 0.85rem; outline: none; transition: 0.3s; width: 100%; cursor: pointer; appearance: none;
+        @media (max-width: 600px) { .video-grid.grid-2 { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } }
+        
+        .video-grid.grid-3, .video-grid.grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+        @media (max-width: 600px) { .video-grid.grid-3, .video-grid.grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; } }
+        
+        .video-grid.grid-more { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+        @media (max-width: 600px) { 
+          .video-grid.grid-more { 
+            grid-template-columns: 1fr 1fr; 
+            grid-auto-rows: minmax(150px, 1fr);
+          } 
         }
-        .setting-group select option { background: #0f172a; color: white; }
-        .setting-group select:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
-        .close-settings { width: 100%; padding: 14px; background: #6366f1; border: none; border-radius: 14px; color: white; font-weight: 700; font-size: 0.9rem; cursor: pointer; margin-top: 10px; transition: 0.3s; }
-        @media (max-width: 900px) { .video-container { aspect-ratio: 1/1; height: auto; } }
+        @media (max-width: 400px) {
+          .video-grid.grid-more { 
+             grid-template-columns: 1fr;
+          }
+        }
+
+        .video-container { background: #0f172a; border-radius: 16px; overflow: hidden; position: relative; border: 2px solid rgba(255,255,255,0.05); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); background-image: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); cursor: grab; touch-action: none; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+        .video-container video { width: 100%; height: 100%; object-fit: cover; }
+        .video-container.local video { transform: scaleX(-1); }
+        .active-speaker { border-color: #6366f1 !important; box-shadow: 0 0 30px rgba(99, 102, 241, 0.4); }
+        
+        .participant-label { position: absolute; bottom: 12px; left: 12px; background: rgba(15, 23, 42, 0.7); padding: 4px 10px; border-radius: 8px; font-size: 0.7rem; backdrop-filter: blur(12px); display: flex; align-items: center; gap: 6px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); z-index: 5; }
+        .camera-off-placeholder { position: absolute; inset: 0; background: #0f172a; display: flex; align-items: center; justify-content: center; }
+        .user-avatar { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #a855f7); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 2rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 3px solid rgba(255,255,255,0.15); }
+        
+        .call-controls { padding: 20px; background: linear-gradient(transparent, rgba(0,0,0,0.9)); flex-shrink: 0; display: flex; justify-content: center; }
+        .controls-inner { display: flex; gap: 12px; background: rgba(15, 23, 42, 0.9); padding: 12px 20px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(30px); }
+        
+        .action-btn { width: 50px; height: 50px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.05); color: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; transition: all 0.2s; }
+        .action-btn:hover { background: rgba(255,255,255,0.1); transform: translateY(-2px); }
+        .action-btn label { font-size: 0.5rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
+        .action-btn svg { width: 20px; height: 20px; }
+        
+        .action-btn.muted, .action-btn.camera-off { color: #f87171; background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.25); }
+        .action-btn.sharing { color: #34d399; background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.25); }
+        .action-btn.end-call { background: #ef4444; border: none; width: 60px; color: white; }
+        .action-btn.end-call:hover { background: #dc2626; }
+        
+        .settings-modal { position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 300px; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
+        
+        @media (max-width: 600px) {
+          .call-header { padding: 10px 16px; }
+          .call-controls { padding: 15px; }
+          .controls-inner { padding: 10px 16px; gap: 8px; border-radius: 20px; }
+          .action-btn { width: 44px; height: 44px; border-radius: 12px; }
+          .action-btn label { display: none; }
+          .action-btn.end-call { width: 54px; }
+          .user-avatar { width: 60px; height: 60px; font-size: 1.5rem; }
+        }
       `}</style>
     </div>
   );
@@ -627,48 +768,111 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
 const RemoteVideo = ({ stream, user, socketId, onSpeaking }) => {
   const videoRef = useRef();
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [, forceUpdate] = useState({});
+  const [playError, setPlayError] = useState(false);
 
   useEffect(() => {
     if (videoRef.current && stream) {
+      console.log(`[WebRTC] Attaching stream to video for ${socketId}`);
       videoRef.current.srcObject = stream;
-      const handleAddTrack = () => { videoRef.current.srcObject = null; videoRef.current.srcObject = stream; forceUpdate({}); };
+      
+      const playVideo = async () => {
+        try {
+          await videoRef.current.play();
+          setPlayError(false);
+        } catch (err) {
+          console.warn(`[WebRTC] Auto-play blocked for ${socketId}:`, err);
+          setPlayError(true);
+        }
+      };
+
+      playVideo();
+
+      const handleAddTrack = () => {
+        console.log(`[WebRTC] Track added to stream for ${socketId}`);
+        // Reset srcObject to force re-evaluation of tracks
+        videoRef.current.srcObject = null;
+        videoRef.current.srcObject = stream;
+        playVideo();
+      };
+
       stream.addEventListener('addtrack', handleAddTrack);
       return () => stream.removeEventListener('addtrack', handleAddTrack);
     }
-  }, [stream]);
+  }, [stream, socketId]);
 
   useEffect(() => {
-    if (!stream) return;
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const analyser = audioContext.createAnalyser();
-    const source = audioContext.createMediaStreamSource(stream);
-    source.connect(analyser); analyser.fftSize = 256;
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    let animationId;
-    let lastSpeaking = false;
-    const checkVolume = () => {
-      analyser.getByteFrequencyData(dataArray);
-      let sum = 0; for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
-      const average = sum / bufferLength;
-      const speaking = average > 30;
-      if (speaking !== lastSpeaking) { lastSpeaking = speaking; setIsSpeaking(speaking); if (onSpeaking) onSpeaking(speaking); }
-      animationId = requestAnimationFrame(checkVolume);
-    };
-    checkVolume();
-    return () => { cancelAnimationFrame(animationId); audioContext.close(); };
-  }, [stream, onSpeaking]);
+    if (!stream || stream.getAudioTracks().length === 0) return;
+    
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser); 
+      analyser.fftSize = 256;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      let animationId;
+      let lastSpeaking = false;
+      
+      const checkVolume = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0; for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+        const average = sum / bufferLength;
+        const speaking = average > 30;
+        if (speaking !== lastSpeaking) { 
+          lastSpeaking = speaking; 
+          setIsSpeaking(speaking); 
+          if (onSpeaking) onSpeaking(speaking); 
+        }
+        animationId = requestAnimationFrame(checkVolume);
+      };
+      checkVolume();
+      return () => { 
+        cancelAnimationFrame(animationId); 
+        if (audioContext.state !== 'closed') audioContext.close(); 
+      };
+    } catch (err) {
+      console.error(`[WebRTC] Audio analysis error for ${socketId}:`, err);
+    }
+  }, [stream, socketId, onSpeaking]);
 
   return (
     <>
-      {stream ? <video ref={videoRef} autoPlay playsInline /> : (
+      {stream ? (
+        <>
+          <video 
+            ref={videoRef} 
+            autoPlay 
+            playsInline 
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+          {playError && (
+            <div className="play-error-overlay" onClick={() => videoRef.current?.play()}>
+              <span>Click to unmute</span>
+            </div>
+          )}
+        </>
+      ) : (
         <div className="camera-off-placeholder">
           <div className="user-avatar" style={{ fontSize: '1rem' }}>{user?.name?.slice(0, 2).toUpperCase() || '...'}</div>
           <div style={{ position: 'absolute', bottom: '40px', fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600 }}>CONNECTING...</div>
         </div>
       )}
-      <div className="participant-label">{user?.name || 'Guest'} {user?.isMuted && <MicOff size={10} style={{ color: '#ef4444' }} />}</div>
+      <div className="participant-label">
+        {user?.name || 'Guest'} {user?.isMuted && <MicOff size={10} style={{ color: '#ef4444' }} />}
+      </div>
+      <style>{`
+        .play-error-overlay {
+          position: absolute; inset: 0; background: rgba(0,0,0,0.6);
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; z-index: 10; border-radius: 20px;
+        }
+        .play-error-overlay span {
+          background: #6366f1; padding: 8px 16px; border-radius: 20px;
+          font-size: 0.8rem; font-weight: 600; color: white;
+          box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+        }
+      `}</style>
     </>
   );
 };

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import CallOverlay from '../components/CallOverlay';
 import PreJoinModal from '../components/PreJoinModal';
+import './ChatRoom.css';
 
 const ChatRoom = () => {
   const { id } = useParams();
@@ -301,15 +302,7 @@ const ChatRoom = () => {
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      maxWidth: '1200px',
-      margin: '0 auto',
-      background: 'var(--bg-primary)',
-      position: 'relative'
-    }}>
+    <div className="chat-container">
       {/* Guest Name Prompt */}
       {showGuestPrompt && (
         <div style={{
@@ -395,63 +388,54 @@ const ChatRoom = () => {
       </AnimatePresence>
 
       {/* Top Bar */}
-      <header className="glass" style={{
-        padding: '16px 24px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        zIndex: 10
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <header className="glass chat-header">
+        <div className="header-left">
           <button
             onClick={() => navigate('/')}
-            className="btn-secondary"
-            style={{ padding: '8px', borderRadius: '50%', background: 'none' }}
+            className="btn-icon"
           >
             <ArrowLeft size={24} />
           </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ background: 'var(--accent-gradient)', padding: '10px', borderRadius: '12px' }}>
-              <Hash size={20} color="white" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ background: 'var(--accent-gradient)', padding: '8px', borderRadius: '10px' }} className="hide-mobile">
+              <Hash size={18} color="white" />
             </div>
-            <div>
-              <h3 style={{ fontSize: '1.1rem' }}>Room Chat</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                <Users size={12} /> {participants.length} Active
-                {activeCall && <span style={{ color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '4px' }}> • <VideoIcon size={12}/> Call in progress</span>}
+            <div className="room-info">
+              <h3>Room Chat</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                <Users size={10} /> {participants.length} Active
+                {activeCall && <span style={{ color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '4px' }}> • <VideoIcon size={10}/> Live</span>}
               </div>
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="header-right">
           {activeCall && !isInCall && (
             <motion.button
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               onClick={() => { setCallType('video'); setIsInCall(true); }}
               className="btn btn-primary"
-              style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '12px' }}
+              style={{ padding: '6px 12px', fontSize: '0.7rem', borderRadius: '10px' }}
             >
-              Join Call
+              Join
             </motion.button>
           )}
           <button 
             onClick={() => { setCallType('audio'); setIsInCall(true); }}
-            className="btn-secondary" 
-            style={{ background: 'none', padding: '8px', color: 'var(--text-secondary)' }}
+            className="btn-icon" 
             title="Audio Call"
           >
             <Phone size={20} />
           </button>
           <button 
             onClick={() => { setCallType('video'); setIsInCall(true); }}
-            className="btn-secondary" 
-            style={{ background: 'none', padding: '8px', color: 'var(--text-secondary)' }}
+            className="btn-icon" 
             title="Video Call"
           >
             <VideoIcon size={20} />
           </button>
-          <button className="btn-secondary" style={{ background: 'none', padding: '8px' }}>
+          <button className="btn-icon">
             <MoreVertical size={20} />
           </button>
         </div>
@@ -475,14 +459,7 @@ const ChatRoom = () => {
       </AnimatePresence>
 
       {/* Messages Area */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '16px'
-      }}>
+      <div className="messages-area">
         <AnimatePresence>
           {messages.map((msg, index) => {
             const isOwnMessage = (token && user && msg.user_id === user.id) ||
@@ -493,27 +470,15 @@ const ChatRoom = () => {
                 key={`${msg.id || 'msg'}-${index}`}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                style={{
-                  alignSelf: isOwnMessage ? 'flex-end' : 'flex-start',
-                  maxWidth: '70%',
-                }}
+                className={`message-bubble-wrapper ${isOwnMessage ? 'own' : 'other'}`}
               >
-                <div style={{
-                  fontSize: '0.75rem',
-                  color: 'var(--text-dim)',
-                  marginBottom: '4px',
-                  textAlign: isOwnMessage ? 'right' : 'left',
-                  marginLeft: '8px'
-                }}>
+                <div className="message-meta" style={{ textAlign: isOwnMessage ? 'right' : 'left' }}>
                   {msg.user_name} • {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
-                <div className="glass" style={{
-                  padding: '12px 18px',
-                  borderRadius: isOwnMessage ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
+                <div className={`glass message-bubble ${isOwnMessage ? 'own' : 'other'}`} style={{
                   background: isOwnMessage ? 'var(--accent-gradient)' : 'var(--bg-secondary)',
                   color: 'white',
-                  border: 'none',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                  border: 'none'
                 }}>
                   {msg.message}
                 </div>
@@ -525,53 +490,28 @@ const ChatRoom = () => {
       </div>
 
       {/* Input Area */}
-      <div style={{ padding: '24px', position: 'relative' }}>
+      <div className="input-area">
         <form
           onSubmit={handleSendMessage}
-          className="glass"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            padding: '8px 8px 8px 16px',
-            borderRadius: '24px',
-            border: '1px solid var(--glass-border)',
-            zIndex: 10
-          }}
+          className="glass input-form"
         >
-          <button type="button" style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}>
+          <button type="button" className="btn-icon" style={{ padding: '4px' }}>
             <Paperclip size={20} />
           </button>
           <input
             type="text"
+            className="message-input"
             placeholder="Type a message..."
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            style={{
-              flex: 1,
-              background: 'none',
-              border: 'none',
-              color: 'white',
-              outline: 'none',
-              padding: '8px 0',
-              fontSize: '1rem'
-            }}
           />
-          <button type="button" style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}>
+          <button type="button" className="btn-icon hide-mobile" style={{ padding: '4px' }}>
             <Smile size={20} />
           </button>
           <button
             type="submit"
-            className="btn btn-primary"
-            style={{
-              borderRadius: '50%',
-              width: '44px',
-              height: '44px',
-              padding: 0,
-              minWidth: 'auto'
-            }}
+            className="btn btn-primary send-btn"
             disabled={!newMessage.trim()}
-            onClick={handleSendMessage}
           >
             <Send size={18} />
           </button>

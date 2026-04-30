@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 
 import { useSocket } from '../context/SocketContext';
+import './Home.css';
 
 const Home = () => {
   const [rooms, setRooms] = useState([]);
@@ -148,24 +149,18 @@ const Home = () => {
   );
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
+    <div className="home-container">
       {/* Header */}
-      <header style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        marginBottom: '40px',
-        padding: '20px 0'
-      }}>
+      <header className="home-header">
         <div>
           <h1 className="text-gradient" style={{ fontSize: '2rem', fontWeight: '800' }}>NotAllowedRoom</h1>
           <p style={{ color: 'var(--text-secondary)' }}>
             {token ? `Welcome back, ${user?.name}` : 'Welcome, Explore public rooms'}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div className="home-header-actions">
           <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
-            <Plus size={20} /> Create Room
+            <Plus size={20} /> <span className="hide-mobile">Create Room</span>
           </button>
           {token ? (
             <button onClick={logout} className="btn btn-secondary">
@@ -173,45 +168,33 @@ const Home = () => {
             </button>
           ) : (
             <button onClick={() => navigate('/login')} className="btn btn-secondary">
-              <LogIn size={20} /> Login
+              <LogIn size={20} /> <span className="hide-mobile">Login</span>
             </button>
           )}
         </div>
       </header>
 
       {/* Hero Stats / Search */}
-      <div style={{ position: 'relative', marginBottom: '32px' }}>
+      <div className="search-container" style={{ marginBottom: '32px' }}>
         <Search size={20} style={{ 
           position: 'absolute', 
           left: '16px', 
           top: '50%', 
           transform: 'translateY(-50%)',
-          color: 'var(--text-dim)'
+          color: 'var(--text-dim)',
+          zIndex: 1
         }} />
         <input 
           type="text" 
+          className="search-input"
           placeholder="Search rooms..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ 
-            width: '100%', 
-            padding: '16px 16px 16px 48px',
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--glass-border)',
-            borderRadius: 'var(--radius-lg)',
-            color: 'white',
-            fontSize: '1rem',
-            outline: 'none'
-          }}
         />
       </div>
 
       {/* Room Grid */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
-        gap: '24px' 
-      }}>
+      <div className="room-grid">
         {loading ? (
            [1,2,3].map(i => <div key={i} className="glass card" style={{ height: '180px', opacity: 0.5 }}></div>)
         ) : filteredRooms.length > 0 ? (
@@ -272,21 +255,11 @@ const Home = () => {
 
       {/* Create Room Modal */}
       {showCreateModal && (
-        <div style={{ 
-          position: 'fixed', 
-          top: 0, left: 0, right: 0, bottom: 0, 
-          background: 'rgba(0,0,0,0.8)', 
-          zIndex: 1000,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px'
-        }}>
+        <div className="modal-overlay">
           <motion.div 
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="glass card" 
-            style={{ maxWidth: '400px', width: '100%' }}
+            className="glass card modal-content" 
           >
             <h2 style={{ marginBottom: '20px' }}>New Chat Room</h2>
             <form onSubmit={handleCreateRoom}>
@@ -339,13 +312,12 @@ const Home = () => {
 
       {/* Guest Name Prompt */}
       {showGuestPrompt && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          zIndex: 1001, background: 'rgba(0,0,0,0.8)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '20px'
-        }}>
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass card" style={{ width: '100%', maxWidth: '350px' }}>
+        <div className="modal-overlay" style={{ zIndex: 1001 }}>
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            className="glass card modal-content"
+          >
             <h2 style={{ marginBottom: '16px' }}>Enter your Name</h2>
             <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '0.875rem' }}>You're creating a room as a guest. Please provide a name.</p>
             <form onSubmit={handleGuestSubmit}>
