@@ -21,14 +21,28 @@ const io = setupSocket(server);
 
 // Parse CORS origins
 let allowedOrigins = ['*'];
-try {
-    if (process.env.FRONT_CORS) {
-        // Convert Python-style list or JSON string to array and sanitize (remove trailing slashes)
-        const cleaned = process.env.FRONT_CORS.replace(/'/g, '"');
-        allowedOrigins = JSON.parse(cleaned).map(o => typeof o === 'string' ? o.trim().replace(/\/$/, "") : o);
+if (process.env.FRONT_CORS) {
+    try {
+        const corsValue = process.env.FRONT_CORS.trim();
+        if (corsValue.startsWith('[') && corsValue.endsWith(']')) {
+            // It looks like a JSON array or Python-style list
+            const cleaned = corsValue.replace(/'/g, '"');
+            allowedOrigins = JSON.parse(cleaned);
+        } else {
+            // It might be a comma-separated list or a single URL
+            allowedOrigins = corsValue.split(',').map(o => o.trim());
+        }
+        
+        // Clean up: remove trailing slashes and ensure strings
+        allowedOrigins = allowedOrigins.map(o => 
+            typeof o === 'string' ? o.trim().replace(/\/$/, "") : o
+        );
+        console.log("✅ Allowed CORS origins:", allowedOrigins);
+    } catch (e) {
+        console.error("❌ Error parsing FRONT_CORS:", e.message);
+        // Fallback to split if JSON parse fails
+        allowedOrigins = process.env.FRONT_CORS.split(',').map(o => o.trim().replace(/\/$/, ""));
     }
-} catch (e) {
-    console.error("Error parsing FRONT_CORS:", e.message);
 }
 
 const corsOptions = {
@@ -37,6 +51,7 @@ const corsOptions = {
         if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
+            console.error(`🚫 CORS blocked for origin: ${origin}`);
             callback(new Error('Not allowed by CORS'));
         }
     },

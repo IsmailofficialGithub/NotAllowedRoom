@@ -264,14 +264,24 @@ export const registerSocketHandlers = (io, socket) => {
 import { Server } from 'socket.io';
 
 export const setupSocket = (server) => {
+    // Parse CORS origins
     let allowedOrigins = ['*'];
-    try {
-        if (process.env.FRONT_CORS) {
-            const cleaned = process.env.FRONT_CORS.replace(/'/g, '"');
-            allowedOrigins = JSON.parse(cleaned).map(o => typeof o === 'string' ? o.trim().replace(/\/$/, "") : o);
+    if (process.env.FRONT_CORS) {
+        try {
+            const corsValue = process.env.FRONT_CORS.trim();
+            if (corsValue.startsWith('[') && corsValue.endsWith(']')) {
+                const cleaned = corsValue.replace(/'/g, '"');
+                allowedOrigins = JSON.parse(cleaned);
+            } else {
+                allowedOrigins = corsValue.split(',').map(o => o.trim());
+            }
+            allowedOrigins = allowedOrigins.map(o => 
+                typeof o === 'string' ? o.trim().replace(/\/$/, "") : o
+            );
+        } catch (e) {
+            console.error("❌ Error parsing FRONT_CORS for socket:", e.message);
+            allowedOrigins = process.env.FRONT_CORS.split(',').map(o => o.trim().replace(/\/$/, ""));
         }
-    } catch (e) {
-        console.error("Error parsing FRONT_CORS for socket:", e.message);
     }
 
     const io = new Server(server, {
@@ -280,6 +290,7 @@ export const setupSocket = (server) => {
                 if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
                     callback(null, true);
                 } else {
+                    console.error(`🚫 Socket CORS blocked for origin: ${origin}`);
                     callback(new Error('Not allowed by CORS'));
                 }
             },
