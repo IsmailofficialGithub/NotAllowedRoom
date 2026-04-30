@@ -2,7 +2,7 @@
     "rewrites": [
         {
             "source": "/api/:path*",
-            "destination": "http://109.123.251.103:9000/api/:path*"
+            "destination": "https://api-notallowed.109.123.251.103.sslip.io/api/:path*"
         }
     ]
 }
