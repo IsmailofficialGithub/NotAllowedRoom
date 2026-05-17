@@ -17,18 +17,36 @@
 
 @media (max-width: 640px) {
   .home-header {
-    flex-direction: column;
-    align-items: flex-start;
-    margin-bottom: 24px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    margin-bottom: 18px;
+    padding-top: 18px;
+    gap: 14px;
   }
   
   .home-header-actions {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .home-header-actions .btn {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: var(--radius-md);
   }
   
   .home-header h1 {
-    font-size: 1.5rem !important;
+    font-size: 1.55rem !important;
+    line-height: 1.05;
+    margin-bottom: 4px;
+  }
+
+  .home-header p {
+    font-size: 0.92rem;
+    line-height: 1.25;
   }
 }
 
@@ -144,38 +162,48 @@
 
 @media (max-width: 520px) {
   .home-container {
-    padding: 12px;
+    padding: 16px;
+  }
+
+  .search-container {
+    margin-bottom: 18px !important;
+  }
+
+  .search-input {
+    padding-top: 14px;
+    padding-bottom: 14px;
   }
 
   .room-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
   }
 
   .room-card.card {
-    padding: 10px 8px;
+    min-height: 136px;
+    padding: 14px;
   }
 
   .room-card-top {
-    margin-bottom: 8px;
+    margin-bottom: 14px;
     align-items: center;
   }
 
   .room-icon {
-    padding: 5px;
+    padding: 7px;
   }
 
   .room-icon svg {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
   }
 
   .room-meta {
-    gap: 4px;
+    gap: 6px;
   }
 
   .room-private-badge {
-    padding: 3px;
+    padding: 4px 6px;
   }
 
   .room-private-badge span {
@@ -183,28 +211,42 @@
   }
 
   .room-count {
-    font-size: 0.72rem;
+    font-size: 0.78rem;
   }
 
   .room-count svg {
-    width: 12px;
-    height: 12px;
+    width: 13px;
+    height: 13px;
   }
 
   .room-title {
-    font-size: 0.78rem;
-    margin-bottom: 2px;
+    font-size: 0.95rem;
+    line-height: 1.25;
+    margin-bottom: 8px;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
   }
 
-  .room-host,
+  .room-host {
+    display: block;
+    font-size: 0.78rem;
+    margin-bottom: 0;
+  }
+
   .room-enter {
     display: none;
   }
 }
 
-@media (max-width: 340px) {
+@media (max-width: 360px) {
   .room-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1fr;
+  }
+
+  .room-card.card {
+    min-height: auto;
   }
 }
 
