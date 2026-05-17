@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Mic, MicOff, Video, VideoOff, PhoneOff, 
-  Maximize2, Users, Settings, Volume2, CheckCircle2
+  Maximize2, Settings
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
 
@@ -16,12 +16,12 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   const [isCameraOff, setIsCameraOff] = useState(!initialVideo);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [localIsSpeaking, setLocalIsSpeaking] = useState(false);
-  const [micLevel, setMicLevel] = useState(0); // For lobby meter
   const [remoteAudioSpeaks, setRemoteAudioSpeaks] = useState({}); // { socketId: boolean }
   const [devices, setDevices] = useState({ video: [], audio: [] });
   const [selectedDevices, setSelectedDevices] = useState({ videoId: '', audioId: '' });
   const [showSettings, setShowSettings] = useState(false);
   const [isJoined, setIsJoined] = useState(false); // Lobby state
+  const [openDeviceMenu, setOpenDeviceMenu] = useState(null);
   
   const localVideoRef = useRef();
   const localStreamRef = useRef(null);
@@ -56,8 +56,14 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     // Initial stream for lobby preview
     const startPreview = async () => {
       try {
+        const isMobile = window.matchMedia('(max-width: 800px)').matches;
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 1280, height: 720 },
+          video: {
+            facingMode: 'user',
+            width: { ideal: isMobile ? 720 : 960 },
+            height: { ideal: isMobile ? 960 : 720 },
+            aspectRatio: { ideal: isMobile ? 0.75 : 1.333333333 }
+          },
           audio: true
         });
         setLocalStream(stream);
@@ -136,9 +142,6 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       let sum = 0; for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
       const average = sum / bufferLength;
       
-      // Update continuous level for meter
-      setMicLevel(Math.min(100, Math.floor(average * 1.5)));
-
       const speaking = average > 30;
       if (speaking !== lastSpeaking) { lastSpeaking = speaking; setLocalIsSpeaking(speaking); }
       animationId = requestAnimationFrame(checkVolume);
@@ -442,6 +445,55 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     return 'grid-more';
   };
 
+  const formatDeviceLabel = (label, fallback) => {
+    const value = label || fallback;
+    return value
+      .replace(/\s*\([^)]+\)\s*/g, '')
+      .replace(/^default\s*-\s*/i, 'Default - ')
+      .replace(/^communications\s*-\s*/i, 'Comms - ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const renderLobbyDevicePicker = (type, label, Icon, deviceList, selectedId, fallback) => {
+    const selectedDevice = deviceList.find(device => device.deviceId === selectedId);
+    const menuKey = `lobby-${type}`;
+
+    return (
+      <div className="lobby-select-group">
+        <label><Icon size={14} /> {label}</label>
+        <div className="lobby-device-select">
+          <button
+            type="button"
+            className="lobby-device-trigger"
+            onClick={() => setOpenDeviceMenu(openDeviceMenu === menuKey ? null : menuKey)}
+          >
+            <span>{formatDeviceLabel(selectedDevice?.label, fallback)}</span>
+            <span className="lobby-device-caret">⌄</span>
+          </button>
+          {openDeviceMenu === menuKey && (
+            <div className="lobby-device-menu">
+              {deviceList.map(device => (
+                <button
+                  type="button"
+                  key={device.deviceId}
+                  title={device.label || fallback}
+                  className={`lobby-device-option ${device.deviceId === selectedId ? 'selected' : ''}`}
+                  onClick={() => {
+                    changeDevice(type, device.deviceId);
+                    setOpenDeviceMenu(null);
+                  }}
+                >
+                  {formatDeviceLabel(device.label, fallback)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // 🏛 Lobby / Join UI
   if (!isJoined) {
     return (
@@ -468,48 +520,9 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
             <h2>Ready to join?</h2>
             <p>{remotesCount === 0 ? 'Be the first to join this conversation' : `${remotesCount} others are already in the call`}</p>
             
-            <div className="lobby-test-area">
-              <div className="mic-meter-container">
-                <label><Volume2 size={14} /> Mic Level</label>
-                <div className="mic-meter-bg">
-                  <motion.div 
-                    className="mic-meter-fill"
-                    animate={{ width: `${micLevel}%` }}
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                  />
-                </div>
-              </div>
-              <button className="test-sound-btn" onClick={() => {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                if (ctx.state === 'suspended') ctx.resume();
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(440, ctx.currentTime);
-                gain.gain.setValueAtTime(0.1, ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.start();
-                osc.stop(ctx.currentTime + 0.5);
-              }}>
-                Test Speakers
-              </button>
-            </div>
-
             <div className="lobby-settings">
-              <div className="lobby-select-group">
-                <label><Video size={14} /> Camera</label>
-                <select value={selectedDevices.videoId} onChange={(e) => changeDevice('video', e.target.value)}>
-                  {devices.video.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Camera'}</option>)}
-                </select>
-              </div>
-              <div className="lobby-select-group">
-                <label><Mic size={14} /> Microphone</label>
-                <select value={selectedDevices.audioId} onChange={(e) => changeDevice('audio', e.target.value)}>
-                  {devices.audio.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Microphone'}</option>)}
-                </select>
-              </div>
+              {renderLobbyDevicePicker('video', 'Camera', Video, devices.video, selectedDevices.videoId, 'Camera')}
+              {renderLobbyDevicePicker('audio', 'Microphone', Mic, devices.audio, selectedDevices.audioId, 'Microphone')}
             </div>
 
             <div className="lobby-actions">
@@ -520,58 +533,57 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
         </motion.div>
 
         <style>{`
-          .lobby-root { position: fixed; inset: 0; background: #050508; z-index: 10000; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; color: white; padding: 20px; overflow-y: auto; }
-          .lobby-container { display: flex; background: #0f172a; border-radius: 32px; overflow: hidden; max-width: 900px; width: 100%; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 40px 100px rgba(0,0,0,0.8); }
-          .lobby-preview { width: 60%; background: #000; position: relative; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center; }
+          .lobby-root { position: fixed; inset: 0; background: var(--bg-primary); z-index: 10000; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; color: var(--text-primary); padding: 20px; overflow-y: auto; }
+          .lobby-container { display: flex; background: var(--bg-secondary); border-radius: 12px; overflow: hidden; max-width: 900px; width: 100%; border: 1px solid var(--glass-border); box-shadow: 0 24px 60px rgba(38, 34, 28, 0.14); }
+          .lobby-preview { width: 58%; background: #080808; position: relative; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; }
           .lobby-preview video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
           .lobby-overlay-controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; }
-          .lobby-btn { width: 50px; height: 50px; border-radius: 50%; border: none; background: rgba(255,255,255,0.15); color: white; cursor: pointer; backdrop-filter: blur(10px); transition: 0.3s; display: flex; align-items: center; justify-content: center; }
-          .lobby-btn:hover { background: rgba(255,255,255,0.25); transform: translateY(-2px); }
+          .lobby-btn { width: 46px; height: 46px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.22); background: rgba(34,32,28,0.58); color: white; cursor: pointer; backdrop-filter: blur(10px); transition: var(--transition); display: flex; align-items: center; justify-content: center; }
+          .lobby-btn:hover { background: rgba(34,32,28,0.72); transform: translateY(-1px); }
           .lobby-btn.muted, .lobby-btn.off { background: #ef4444; }
-          .lobby-details { width: 40%; padding: 40px; display: flex; flex-direction: column; justify-content: center; }
-          .lobby-details h2 { margin: 0 0 10px 0; font-size: 1.8rem; letter-spacing: -0.02em; }
-          .lobby-details p { color: #94a3b8; margin: 0 0 20px 0; font-size: 0.9rem; }
+          .lobby-details { width: 42%; padding: 34px; display: flex; flex-direction: column; justify-content: center; }
+          .lobby-details h2 { margin: 0 0 8px 0; font-size: 1.75rem; letter-spacing: 0; color: var(--text-primary); }
+          .lobby-details p { color: var(--text-secondary); margin: 0 0 20px 0; font-size: 0.92rem; line-height: 1.35; }
           
-          .lobby-test-area { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; margin-bottom: 25px; border: 1px solid rgba(255,255,255,0.05); }
-          .mic-meter-container { margin-bottom: 15px; }
-          .mic-meter-container label { font-size: 0.7rem; color: #64748b; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-          .mic-meter-bg { height: 6px; background: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden; }
-          .mic-meter-fill { height: 100%; background: #6366f1; border-radius: 10px; box-shadow: 0 0 15px #6366f1; }
-          .test-sound-btn { width: 100%; padding: 10px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 12px; color: #818cf8; font-size: 0.75rem; font-weight: 700; cursor: pointer; transition: 0.3s; }
-          .test-sound-btn:hover { background: rgba(99, 102, 241, 0.2); }
-
-          .lobby-settings { display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; }
+          .lobby-settings { display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px; }
           .lobby-select-group { display: flex; flex-direction: column; gap: 8px; }
-          .lobby-select-group label { font-size: 0.75rem; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 6px; }
-          .lobby-select-group select { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 12px; font-size: 0.85rem; outline: none; transition: 0.3s; width: 100%; cursor: pointer; appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-            background-repeat: no-repeat; background-position: right 12px center; padding-right: 40px;
-          }
-          .lobby-select-group select option { background: #0f172a; color: white; }
-          .lobby-actions { display: flex; gap: 15px; }
-          .join-btn { flex: 2; padding: 15px; background: #6366f1; border: none; border-radius: 16px; color: white; font-weight: 700; font-size: 1rem; cursor: pointer; transition: 0.3s; }
-          .join-btn:hover { background: #4f46e5; box-shadow: 0 10px 20px rgba(99, 102, 241, 0.4); transform: translateY(-2px); }
-          .cancel-btn { flex: 1; padding: 15px; background: transparent; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; color: #94a3b8; cursor: pointer; transition: 0.3s; font-weight: 600; }
-          .cancel-btn:hover { color: white; background: rgba(255,255,255,0.05); }
+          .lobby-select-group label { font-size: 0.72rem; color: var(--text-secondary); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; display: flex; align-items: center; gap: 6px; }
+          .lobby-device-select { position: relative; min-width: 0; }
+          .lobby-device-trigger { width: 100%; min-width: 0; height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--bg-secondary); border: 1px solid var(--glass-border); border-radius: 8px; color: var(--text-primary); padding: 0 12px; font-size: 0.9rem; cursor: pointer; text-align: left; }
+          .lobby-device-trigger span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .lobby-device-caret { color: var(--text-secondary); font-size: 1rem; line-height: 1; }
+          .lobby-device-menu { margin-top: 6px; width: 100%; max-height: 132px; overflow-y: auto; border: 1px solid var(--glass-border); border-radius: 8px; background: var(--bg-secondary); box-shadow: 0 14px 28px rgba(38, 34, 28, 0.12); }
+          .lobby-device-option { width: 100%; min-width: 0; display: block; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--glass-border); background: transparent; color: var(--text-primary); font-size: 0.88rem; line-height: 1.25; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .lobby-device-option:last-child { border-bottom: 0; }
+          .lobby-device-option:hover, .lobby-device-option.selected { background: var(--accent-soft); color: var(--accent-secondary); }
+          .lobby-actions { display: flex; gap: 12px; }
+          .join-btn { flex: 2; padding: 14px; background: var(--accent-primary); border: none; border-radius: 8px; color: white; font-weight: 800; font-size: 1rem; cursor: pointer; transition: var(--transition); }
+          .join-btn:hover { background: var(--accent-secondary); }
+          .cancel-btn { flex: 1; padding: 14px; background: transparent; border: 1px solid var(--glass-border); border-radius: 8px; color: var(--text-secondary); cursor: pointer; transition: var(--transition); font-weight: 700; }
+          .cancel-btn:hover { color: var(--text-primary); background: var(--bg-tertiary); }
           .lobby-avatar-placeholder { position: absolute; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; }
-          .lobby-avatar { width: 120px; height: 120px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #a855f7); display: flex; align-items: center; justify-content: center; font-size: 3rem; font-weight: 800; border: 4px solid rgba(255,255,255,0.2); }
+          .lobby-avatar { width: 104px; height: 104px; border-radius: 50%; background: var(--accent-primary); display: flex; align-items: center; justify-content: center; font-size: 2.7rem; font-weight: 800; border: 4px solid rgba(255,255,255,0.2); }
           
           @media (max-width: 800px) { 
-            .lobby-root { padding: 10px; align-items: flex-start; }
-            .lobby-container { flex-direction: column; border-radius: 20px; margin-top: 10px; margin-bottom: 20px; } 
+            .lobby-root { padding: 16px; align-items: flex-start; }
+            .lobby-container { flex-direction: column; border-radius: 12px; margin-top: 8px; margin-bottom: 18px; max-width: 430px; } 
             .lobby-preview, .lobby-details { width: 100%; } 
-            .lobby-details { padding: 25px; }
-            .lobby-details h2 { font-size: 1.5rem; }
-            .lobby-actions { flex-direction: column; }
+            .lobby-preview { aspect-ratio: 4/3; }
+            .lobby-details { padding: 22px; }
+            .lobby-details h2 { font-size: 1.55rem; }
+            .lobby-details p { margin-bottom: 18px; }
+            .lobby-actions { flex-direction: column; gap: 10px; }
             .join-btn { order: 1; }
-            .cancel-btn { order: 2; border: none; }
+            .cancel-btn { order: 2; border: none; padding: 10px; }
           }
           
           @media (max-height: 700px) and (max-width: 800px) {
-            .lobby-preview { aspect-ratio: 21/9; }
-            .lobby-avatar { width: 80px; height: 80px; font-size: 2rem; }
-            .lobby-test-area { display: none; }
-            .lobby-settings { margin-bottom: 15px; }
+            .lobby-root { padding-top: 10px; }
+            .lobby-preview { aspect-ratio: 16/10; }
+            .lobby-avatar { width: 72px; height: 72px; font-size: 1.8rem; }
+            .lobby-settings { margin-bottom: 14px; }
+            .lobby-details { padding: 18px 22px; }
+            .lobby-device-menu { max-height: 96px; }
           }
         `}</style>
       </div>
@@ -679,13 +691,21 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
               <div className="setting-group">
                 <label><Video size={16} /> Camera</label>
                 <select value={selectedDevices.videoId} onChange={(e) => changeDevice('video', e.target.value)}>
-                  {devices.video.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Camera'}</option>)}
+                  {devices.video.map(d => (
+                    <option key={d.deviceId} value={d.deviceId} title={d.label || 'Camera'}>
+                      {formatDeviceLabel(d.label, 'Camera')}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="setting-group">
                 <label><Mic size={16} /> Microphone</label>
                 <select value={selectedDevices.audioId} onChange={(e) => changeDevice('audio', e.target.value)}>
-                  {devices.audio.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Microphone'}</option>)}
+                  {devices.audio.map(d => (
+                    <option key={d.deviceId} value={d.deviceId} title={d.label || 'Microphone'}>
+                      {formatDeviceLabel(d.label, 'Microphone')}
+                    </option>
+                  ))}
                 </select>
               </div>
               <button className="close-settings" onClick={() => setShowSettings(false)}>Done</button>

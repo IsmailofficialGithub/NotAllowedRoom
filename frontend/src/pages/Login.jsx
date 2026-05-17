@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
-import { LogIn, Mail, Lock, AlertCircle } from 'lucide-react';
+import { LogIn, Mail, Lock, AlertCircle, ArrowLeft } from 'lucide-react';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -133,6 +133,15 @@ const Login = () => {
             Register here
           </Link>
         </p>
+
+        <Link
+          to="/"
+          className="btn btn-secondary"
+          style={{ width: '100%', marginTop: '16px', padding: '12px', fontSize: '0.9rem' }}
+        >
+          <ArrowLeft size={18} />
+          Back to rooms
+        </Link>
       </motion.div>
     </div>
   );

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
-import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle } from 'lucide-react';
+import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
 
 const Register = () => {
   const [name, setName] = useState('');
@@ -175,6 +175,15 @@ const Register = () => {
             Login here
           </Link>
         </p>
+
+        <Link
+          to="/"
+          className="btn btn-secondary"
+          style={{ width: '100%', marginTop: '16px', padding: '12px', fontSize: '0.9rem' }}
+        >
+          <ArrowLeft size={18} />
+          Back to rooms
+        </Link>
       </motion.div>
     </div>
   );
