@@ -15,6 +15,75 @@
   border-bottom: 1px solid var(--glass-border);
 }
 
+.home-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.home-brand-logo {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: block;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  padding: 6px;
+  border: 1px solid var(--glass-border);
+}
+
+.home-brand-copy {
+  min-width: 0;
+}
+
+.home-brand-copy h1 {
+  position: relative;
+  display: inline-flex;
+  color: var(--text-primary);
+  font-size: 1.55rem;
+  font-weight: 800;
+  line-height: 1.05;
+  margin: 0 0 4px;
+  letter-spacing: 0;
+  cursor: default;
+  outline: none;
+}
+
+.home-brand-title::after {
+  content: "NotAllowedRoom";
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  background: var(--text-primary);
+  color: var(--bg-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 10px 24px rgba(38, 34, 28, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: var(--transition);
+}
+
+.home-brand-title:hover::after,
+.home-brand-title:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.home-brand-copy p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.25;
+  margin: 0;
+}
+
 @media (max-width: 640px) {
   .home-header {
     display: grid;
@@ -37,16 +106,40 @@
     padding: 0;
     border-radius: var(--radius-md);
   }
-  
-  .home-header h1 {
-    font-size: 1.55rem !important;
-    line-height: 1.05;
-    margin-bottom: 4px;
+
+  .home-brand {
+    gap: 10px;
   }
 
-  .home-header p {
-    font-size: 0.92rem;
+  .home-brand-logo {
+    width: 38px;
+    height: 38px;
+    padding: 5px;
+  }
+
+  .home-brand-copy h1 {
+    font-size: 1.35rem;
+    line-height: 1.05;
+  }
+
+  .home-brand-copy p {
+    font-size: 0.84rem;
     line-height: 1.25;
+  }
+}
+
+@media (max-width: 380px) {
+  .home-brand-logo {
+    width: 34px;
+    height: 34px;
+  }
+
+  .home-brand-copy h1 {
+    font-size: 1.18rem;
+  }
+
+  .home-brand-copy p {
+    font-size: 0.78rem;
   }
 }
 
@@ -57,8 +150,18 @@
 
 .search-container {
   position: relative;
-  margin-bottom: 24px;
-  width: 100%;
+  margin: 0 auto 28px;
+  width: min(100%, 620px);
+}
+
+.search-icon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  z-index: 1;
+  color: var(--text-dim);
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
 .search-input {
@@ -166,7 +269,8 @@
   }
 
   .search-container {
-    margin-bottom: 18px !important;
+    width: 100%;
+    margin-bottom: 18px;
   }
 
   .search-input {

@@ -12,7 +12,6 @@ import {
   Search, 
   ArrowRight,
   Hash,
-  Layout,
   Lock
 } from 'lucide-react';
 
@@ -152,11 +151,16 @@ const Home = () => {
     <div className="home-container">
       {/* Header */}
       <header className="home-header">
-        <div>
-          <h1 className="text-gradient" style={{ fontSize: '2rem', fontWeight: '800' }}>NotAllowedRoom</h1>
-          <p style={{ color: 'var(--text-secondary)' }}>
+        <div className="home-brand">
+          <img src="/favicon.svg" alt="" className="home-brand-logo" />
+          <div className="home-brand-copy">
+            <h1 className="home-brand-title" title="NotAllowedRoom" tabIndex={0}>
+              NAR
+            </h1>
+            <p>
             {token ? `Welcome back, ${user?.name}` : 'Welcome, Explore public rooms'}
-          </p>
+            </p>
+          </div>
         </div>
         <div className="home-header-actions">
           <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
@@ -175,15 +179,8 @@ const Home = () => {
       </header>
 
       {/* Hero Stats / Search */}
-      <div className="search-container" style={{ marginBottom: '32px' }}>
-        <Search size={20} style={{ 
-          position: 'absolute', 
-          left: '16px', 
-          top: '50%', 
-          transform: 'translateY(-50%)',
-          color: 'var(--text-dim)',
-          zIndex: 1
-        }} />
+      <div className="search-container">
+        <Search size={20} className="search-icon" />
         <input 
           type="text" 
           className="search-input"
