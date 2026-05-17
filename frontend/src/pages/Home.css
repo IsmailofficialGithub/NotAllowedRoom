@@ -150,7 +150,7 @@
 
 .search-container {
   position: relative;
-  margin: 0 auto 28px;
+  margin: 0 0 28px auto;
   width: min(100%, 620px);
 }
 
