@@ -148,15 +148,45 @@
   gap: 12px;
 }
 
+.rooms-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.rooms-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rooms-summary-title {
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.rooms-summary-count {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+
 .search-container {
   position: relative;
-  margin: 0 0 28px auto;
-  width: min(100%, 620px);
+  display: flex;
+  align-items: center;
+  width: min(100%, 380px);
+  flex: 0 1 380px;
 }
 
 .search-icon {
   position: absolute;
-  left: 16px;
+  left: 14px;
   top: 50%;
   z-index: 1;
   color: var(--text-dim);
@@ -166,14 +196,20 @@
 
 .search-input {
   width: 100%;
-  padding: 13px 14px 13px 44px;
+  height: 42px;
+  padding: 0 14px 0 40px;
   background: var(--bg-secondary);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   color: var(--text-primary);
-  font-size: 1rem;
+  font-size: 0.94rem;
   outline: none;
   transition: var(--transition);
+  box-shadow: 0 8px 18px rgba(38, 34, 28, 0.04);
+}
+
+.search-input::placeholder {
+  color: var(--text-dim);
 }
 
 .search-input:focus {
@@ -268,14 +304,26 @@
     padding: 16px;
   }
 
-  .search-container {
-    width: 100%;
+  .rooms-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
     margin-bottom: 18px;
   }
 
+  .rooms-summary {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .search-container {
+    width: 100%;
+    flex-basis: auto;
+  }
+
   .search-input {
-    padding-top: 14px;
-    padding-bottom: 14px;
+    height: 46px;
   }
 
   .room-grid {

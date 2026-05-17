@@ -178,16 +178,24 @@ const Home = () => {
         </div>
       </header>
 
-      {/* Hero Stats / Search */}
-      <div className="search-container">
-        <Search size={20} className="search-icon" />
-        <input 
-          type="text" 
-          className="search-input"
-          placeholder="Search rooms..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+      {/* Room Toolbar */}
+      <div className="rooms-toolbar">
+        <div className="rooms-summary">
+          <span className="rooms-summary-title">Rooms</span>
+          <span className="rooms-summary-count">
+            {filteredRooms.length} {filteredRooms.length === 1 ? 'room' : 'rooms'}
+          </span>
+        </div>
+        <label className="search-container" aria-label="Search rooms">
+          <Search size={18} className="search-icon" />
+          <input
+            type="text"
+            className="search-input"
+            placeholder="Search rooms"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </label>
       </div>
 
       {/* Room Grid */}
