@@ -477,7 +477,7 @@ const ChatRoom = () => {
                 </div>
                 <div className={`glass message-bubble ${isOwnMessage ? 'own' : 'other'}`} style={{
                   background: isOwnMessage ? 'var(--accent-gradient)' : 'var(--bg-secondary)',
-                  color: 'white',
+                  color: isOwnMessage ? 'white' : 'var(--text-primary)',
                   border: 'none'
                 }}>
                   {msg.message}

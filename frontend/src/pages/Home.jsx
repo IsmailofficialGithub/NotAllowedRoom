@@ -196,51 +196,35 @@ const Home = () => {
       {/* Room Grid */}
       <div className="room-grid">
         {loading ? (
-           [1,2,3].map(i => <div key={i} className="glass card" style={{ height: '180px', opacity: 0.5 }}></div>)
+           [1,2,3,4,5,6,7,8].map(i => <div key={i} className="glass card room-card" style={{ height: '120px', opacity: 0.5 }}></div>)
         ) : filteredRooms.length > 0 ? (
           filteredRooms.map((room) => (
             <motion.div 
               key={room.id}
-              whileHover={{ scale: 1.02 }}
-              className="glass card"
-              style={{ cursor: 'pointer' }}
+              whileHover={{ y: -2 }}
+              className="glass card room-card"
               onClick={() => handleJoinRoom(room.id)}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-                <div style={{ 
-                  background: 'rgba(99, 102, 241, 0.1)', 
-                  padding: '8px', 
-                  borderRadius: '12px',
-                  color: 'var(--accent-primary)'
-                }}>
+              <div className="room-card-top">
+                <div className="room-icon">
                   <Hash size={24} />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="room-meta">
                   {room.is_private && (
-                    <div style={{ 
-                      background: 'rgba(239, 68, 68, 0.1)', 
-                      padding: '4px 8px', 
-                      borderRadius: '6px', 
-                      color: '#ef4444',
-                      fontSize: '0.7rem',
-                      fontWeight: '700',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}>
-                      <Lock size={12} /> PRIVATE
+                    <div className="room-private-badge">
+                      <Lock size={12} /> <span>PRIVATE</span>
                     </div>
                   )}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                  <div className="room-count">
                     <Users size={16} /> {room.participant_count || 0}
                   </div>
                 </div>
               </div>
-              <h3 style={{ marginBottom: '8px', fontSize: '1.25rem' }}>{room.room_name}</h3>
-              <p style={{ color: 'var(--text-dim)', fontSize: '0.875rem', marginBottom: '20px' }}>
+              <h3 className="room-title">{room.room_name}</h3>
+              <p className="room-host">
                 Host: {room.host_name === user?.name ? 'You' : room.host_name}
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', color: 'var(--accent-primary)', fontWeight: '600', gap: '4px' }}>
+              <div className="room-enter">
                 Enter Room <ArrowRight size={16} />
               </div>
             </motion.div>

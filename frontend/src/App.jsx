@@ -18,8 +18,8 @@ const ProtectedRoute = ({ children, allowGuest = false }) => {
       height: '100vh', 
       alignItems: 'center', 
       justifyContent: 'center', 
-      color: 'white',
-      background: '#0f172a'
+      color: 'var(--text-primary)',
+      background: 'var(--bg-primary)'
     }}>
       Loading session...
     </div>
@@ -35,7 +35,7 @@ const App = () => {
     <Router>
       <AuthProvider>
         <SocketProvider>
-          <div style={{ background: '#0f172a', minHeight: '100vh' }}>
+          <div style={{ background: 'var(--bg-primary)', minHeight: '100vh' }}>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
