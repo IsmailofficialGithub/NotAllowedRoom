@@ -12,8 +12,16 @@ const PreJoinModal = ({ onJoin, userName }) => {
   useEffect(() => {
     const getStream = async () => {
       try {
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
         const newStream = await navigator.mediaDevices.getUserMedia({
-          video: videoOn,
+          video: videoOn
+            ? {
+                facingMode: 'user',
+                width: { ideal: isMobile ? 720 : 960 },
+                height: { ideal: isMobile ? 960 : 720 },
+                aspectRatio: { ideal: isMobile ? 0.75 : 1.333333333 }
+              }
+            : false,
           audio: micOn
         });
         setStream(newStream);
@@ -57,7 +65,7 @@ const PreJoinModal = ({ onJoin, userName }) => {
                 autoPlay 
                 muted 
                 playsInline 
-                style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} 
+                className="preview-video"
               />
             ) : (
               <div style={{
