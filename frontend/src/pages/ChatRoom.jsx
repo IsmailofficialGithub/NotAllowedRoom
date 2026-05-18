@@ -14,7 +14,9 @@ import {
   Smile,
   Hash,
   Phone,
-  Video as VideoIcon
+  Video as VideoIcon,
+  Trash2,
+  CheckSquare
 } from 'lucide-react';
 import CallOverlay from '../components/CallOverlay';
 import './ChatRoom.css';
@@ -29,6 +31,7 @@ const ChatRoom = () => {
   const [participants, setParticipants] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState(() => new Set());
 
   // Guest & Privacy States
   const [guestName, setGuestName] = useState(localStorage.getItem('guest_name') || '');
@@ -146,6 +149,17 @@ const ChatRoom = () => {
       scrollToBottom();
     };
 
+    const onMessagesDeleted = (data) => {
+      if (Number(data.room_id) !== Number(id)) return;
+      const deletedIds = new Set((data.message_ids || []).map(Number));
+      setMessages(prev => prev.filter(msg => !deletedIds.has(Number(msg.id))));
+      setSelectedMessageIds(prev => {
+        const next = new Set(prev);
+        deletedIds.forEach(messageId => next.delete(messageId));
+        return next;
+      });
+    };
+
     const onCountUpdate = (data) => {
       console.log("📊 Count updated for room", data.room_id, ":", data.participant_count);
       // We could use this to update local state if needed
@@ -194,6 +208,7 @@ const ChatRoom = () => {
     };
 
     socket.on('receive_message', onMessage);
+    socket.on('messages_deleted', onMessagesDeleted);
     socket.on('participant_count_updated', onCountUpdate);
     socket.on('participant_left', onParticipantLeft);
     socket.on('user_joined_room', showJoinNotification);
@@ -202,6 +217,7 @@ const ChatRoom = () => {
 
     return () => {
       socket.off('receive_message', onMessage);
+      socket.off('messages_deleted', onMessagesDeleted);
       socket.off('participant_count_updated', onCountUpdate);
       socket.off('participant_left', onParticipantLeft);
       socket.off('user_joined_room', showJoinNotification);
@@ -289,6 +305,35 @@ const ChatRoom = () => {
 
     console.log('Message emitted');
     setNewMessage('');
+  };
+
+  const isOwnMessage = (msg) => (token && user && msg.user_id === user.id) ||
+    (!token && guestId && msg.user_tempeorary_id === guestId);
+
+  const toggleMessageSelection = (messageId) => {
+    if (!messageId) return;
+    setSelectedMessageIds(prev => {
+      const next = new Set(prev);
+      const normalizedId = Number(messageId);
+      if (next.has(normalizedId)) next.delete(normalizedId);
+      else next.add(normalizedId);
+      return next;
+    });
+  };
+
+  const handleDeleteSelectedMessages = () => {
+    const messageIds = Array.from(selectedMessageIds);
+    if (messageIds.length === 0 || !socket) return;
+
+    socket.emit('delete_messages', {
+      room_id: id,
+      message_ids: messageIds,
+      guest_id: guestId
+    }, (response) => {
+      if (!response?.success) {
+        console.error('Delete messages failed:', response?.message);
+      }
+    });
   };
 
   return (
@@ -435,6 +480,9 @@ const ChatRoom = () => {
             currentUser={user}
             token={token}
             guestId={guestId}
+            selectedMessageIds={selectedMessageIds}
+            onToggleMessageSelect={toggleMessageSelection}
+            onDeleteSelectedMessages={handleDeleteSelectedMessages}
             chatInput={newMessage}
             setChatInput={setNewMessage}
             onSendMessage={handleSendMessage}
@@ -452,28 +500,49 @@ const ChatRoom = () => {
       </AnimatePresence>
 
       {/* Messages Area */}
+      {selectedMessageIds.size > 0 && (
+        <div className="message-selection-bar">
+          <span>{selectedMessageIds.size} selected</span>
+          <button type="button" onClick={handleDeleteSelectedMessages}>
+            <Trash2 size={16} />
+            Delete
+          </button>
+        </div>
+      )}
       <div className="messages-area">
         <AnimatePresence>
           {messages.map((msg, index) => {
-            const isOwnMessage = (token && user && msg.user_id === user.id) ||
-              (!token && guestId && msg.user_tempeorary_id === guestId);
+            const ownMessage = isOwnMessage(msg);
+            const isSelected = selectedMessageIds.has(Number(msg.id));
 
             return (
               <motion.div
                 key={`${msg.id || 'msg'}-${index}`}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`message-bubble-wrapper ${isOwnMessage ? 'own' : 'other'}`}
+                className={`message-bubble-wrapper ${ownMessage ? 'own' : 'other'} ${isSelected ? 'selected' : ''}`}
               >
-                <div className="message-meta" style={{ textAlign: isOwnMessage ? 'right' : 'left' }}>
+                <div className="message-meta" style={{ textAlign: ownMessage ? 'right' : 'left' }}>
                   {msg.user_name} • {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
-                <div className={`glass message-bubble ${isOwnMessage ? 'own' : 'other'}`} style={{
-                  background: isOwnMessage ? 'var(--accent-gradient)' : 'var(--bg-secondary)',
-                  color: isOwnMessage ? 'white' : 'var(--text-primary)',
+                <div className="message-row">
+                  {ownMessage && msg.id && (
+                    <button
+                      type="button"
+                      className={`message-select-btn ${isSelected ? 'active' : ''}`}
+                      onClick={() => toggleMessageSelection(msg.id)}
+                      title={isSelected ? 'Unselect message' : 'Select message'}
+                    >
+                      <CheckSquare size={15} />
+                    </button>
+                  )}
+                <div className={`glass message-bubble ${ownMessage ? 'own' : 'other'}`} style={{
+                  background: ownMessage ? 'var(--accent-gradient)' : 'var(--bg-secondary)',
+                  color: ownMessage ? 'white' : 'var(--text-primary)',
                   border: 'none'
                 }}>
                   {msg.message}
+                </div>
                 </div>
               </motion.div>
             );

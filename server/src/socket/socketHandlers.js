@@ -139,12 +139,13 @@ export const registerSocketHandlers = (io, socket) => {
             if (participantCheck.rows.length === 0) return;
 
             const now = new Date().toISOString();
-            await pool.query(
-                "INSERT INTO room_messages (room_id, user_id, user_tempeorary_id, message, created_at) VALUES ($1, $2, $3, $4, $5)",
+            const insertResult = await pool.query(
+                "INSERT INTO room_messages (room_id, user_id, user_tempeorary_id, message, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id",
                 [cleanRoomId, userId, pGuestId, message, now]
             );
 
             io.to(`room_${cleanRoomId}`).emit('receive_message', {
+                id: insertResult.rows[0].id,
                 room_id: cleanRoomId,
                 message,
                 user_name: pName,
@@ -154,6 +155,49 @@ export const registerSocketHandlers = (io, socket) => {
             });
         } catch (err) {
             console.error('Socket message error:', err);
+        }
+    });
+
+    socket.on('delete_messages', async (data, callback) => {
+        const { room_id, message_ids = [], guest_id } = data || {};
+        const cleanRoomId = parseInt(room_id);
+        const ids = Array.isArray(message_ids)
+            ? message_ids.map(id => parseInt(id)).filter(Boolean)
+            : [];
+        const user = socket.data.user;
+        const userId = user?.id || null;
+        const pGuestId = userId ? null : (guest_id && guest_id !== 'null' && guest_id !== '' ? guest_id : socket.data.guest_id);
+
+        if (!cleanRoomId || ids.length === 0 || (!userId && !pGuestId)) {
+            if (callback) callback({ success: false, message: 'Invalid delete request' });
+            return;
+        }
+
+        try {
+            const deleteResult = await pool.query(
+                `DELETE FROM room_messages
+                 WHERE room_id = $1
+                   AND id = ANY($2::int[])
+                   AND (
+                     ($3::int IS NOT NULL AND user_id = $3)
+                     OR ($4::uuid IS NOT NULL AND user_tempeorary_id = $4)
+                   )
+                 RETURNING id`,
+                [cleanRoomId, ids, userId, pGuestId]
+            );
+
+            const deletedIds = deleteResult.rows.map(row => row.id);
+            if (deletedIds.length > 0) {
+                io.to(`room_${cleanRoomId}`).emit('messages_deleted', {
+                    room_id: cleanRoomId,
+                    message_ids: deletedIds
+                });
+            }
+
+            if (callback) callback({ success: true, message_ids: deletedIds });
+        } catch (err) {
+            console.error('Socket delete messages error:', err);
+            if (callback) callback({ success: false, message: 'Could not delete messages' });
         }
     });
 

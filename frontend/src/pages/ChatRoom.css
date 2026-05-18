@@ -54,6 +54,32 @@
   scrollbar-width: thin;
 }
 
+.message-selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--glass-border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.message-selection-bar button {
+  border: none;
+  border-radius: var(--radius-md);
+  background: #ef4444;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
 .message-bubble-wrapper {
   max-width: 85%;
   width: fit-content;
@@ -65,6 +91,41 @@
 
 .message-bubble-wrapper.other {
   align-self: flex-start;
+}
+
+.message-bubble-wrapper.selected .message-bubble {
+  outline: 2px solid var(--warning);
+  outline-offset: 2px;
+}
+
+.message-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.message-bubble-wrapper.own .message-row {
+  flex-direction: row;
+}
+
+.message-select-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border);
+  background: var(--bg-secondary);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.message-select-btn.active {
+  background: var(--warning);
+  border-color: var(--warning);
+  color: white;
 }
 
 .message-meta {

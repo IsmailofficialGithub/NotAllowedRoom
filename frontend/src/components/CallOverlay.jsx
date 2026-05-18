@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import EmojiPicker from 'emoji-picker-react';
 import { 
   Mic, MicOff, Video, VideoOff, PhoneOff, 
-  Maximize2, Settings, Volume2, MessageSquare, X, Send, Smile
+  Maximize2, Settings, Volume2, MessageSquare, X, Send, Smile, Trash2, CheckSquare
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
 
@@ -18,6 +18,9 @@ const CallOverlay = ({
   currentUser,
   token,
   guestId,
+  selectedMessageIds = new Set(),
+  onToggleMessageSelect,
+  onDeleteSelectedMessages,
   chatInput = '',
   setChatInput,
   onSendMessage
@@ -765,6 +768,12 @@ const CallOverlay = ({
                 <h3>Room Chat</h3>
                 <span>{messages.length} {messages.length === 1 ? 'message' : 'messages'}</span>
               </div>
+              {selectedMessageIds.size > 0 && (
+                <button type="button" className="call-chat-delete" onClick={onDeleteSelectedMessages}>
+                  <Trash2 size={16} />
+                  {selectedMessageIds.size}
+                </button>
+              )}
               <button type="button" className="call-chat-close" onClick={() => setShowChat(false)}>
                 <X size={18} />
               </button>
@@ -775,16 +784,29 @@ const CallOverlay = ({
                 messages.map((msg, index) => {
                   const isOwnMessage = (token && currentUser && msg.user_id === currentUser.id) ||
                     (!token && guestId && msg.user_tempeorary_id === guestId);
+                  const isSelected = selectedMessageIds.has(Number(msg.id));
 
                   return (
                     <div
                       key={`${msg.id || 'call-msg'}-${index}`}
-                      className={`call-chat-message ${isOwnMessage ? 'own' : 'other'}`}
+                      className={`call-chat-message ${isOwnMessage ? 'own' : 'other'} ${isSelected ? 'selected' : ''}`}
                     >
                       <div className="call-chat-meta">
                         {msg.user_name} · {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
-                      <div className="call-chat-bubble">{msg.message}</div>
+                      <div className="call-chat-row">
+                        {isOwnMessage && msg.id && (
+                          <button
+                            type="button"
+                            className={`call-chat-select ${isSelected ? 'active' : ''}`}
+                            onClick={() => onToggleMessageSelect?.(msg.id)}
+                            title={isSelected ? 'Unselect message' : 'Select message'}
+                          >
+                            <CheckSquare size={14} />
+                          </button>
+                        )}
+                        <div className="call-chat-bubble">{msg.message}</div>
+                      </div>
                     </div>
                   );
                 })
@@ -929,11 +951,16 @@ const CallOverlay = ({
         .call-chat-header h3 { margin: 0; font-size: 1rem; line-height: 1.2; }
         .call-chat-header span { color: #94a3b8; font-size: 0.74rem; }
         .call-chat-close { width: 34px; height: 34px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.06); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .call-chat-delete { height: 34px; border-radius: 10px; border: none; background: #ef4444; color: white; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; cursor: pointer; font-weight: 800; }
         .call-chat-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
         .call-chat-message { max-width: 88%; display: flex; flex-direction: column; gap: 3px; }
         .call-chat-message.own { align-self: flex-end; align-items: flex-end; }
         .call-chat-message.other { align-self: flex-start; align-items: flex-start; }
+        .call-chat-message.selected .call-chat-bubble { outline: 2px solid #fbbf24; outline-offset: 2px; }
         .call-chat-meta { color: #94a3b8; font-size: 0.68rem; padding: 0 4px; }
+        .call-chat-row { display: flex; align-items: center; gap: 8px; }
+        .call-chat-select { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: #94a3b8; display: flex; align-items: center; justify-content: center; cursor: pointer; flex: 0 0 auto; }
+        .call-chat-select.active { background: #fbbf24; border-color: #fbbf24; color: #0f172a; }
         .call-chat-bubble { padding: 9px 11px; border-radius: 12px; background: rgba(255,255,255,0.08); color: white; font-size: 0.9rem; line-height: 1.35; word-break: break-word; }
         .call-chat-message.own .call-chat-bubble { background: var(--accent-primary); }
         .call-chat-empty { margin: auto; color: #94a3b8; font-size: 0.9rem; }
