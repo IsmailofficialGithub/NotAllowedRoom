@@ -1,12 +1,27 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import EmojiPicker from 'emoji-picker-react';
 import { 
   Mic, MicOff, Video, VideoOff, PhoneOff, 
-  Maximize2, Settings
+  Maximize2, Settings, Volume2, MessageSquare, X, Send, Smile
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
 
-const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initialMuted = false }) => {
+const CallOverlay = ({
+  roomId,
+  isRoomJoined,
+  onLeave,
+  onEndCall,
+  initialVideo = true,
+  initialMuted = false,
+  messages = [],
+  currentUser,
+  token,
+  guestId,
+  chatInput = '',
+  setChatInput,
+  onSendMessage
+}) => {
   const socket = useSocket();
   const [localStream, setLocalStream] = useState(null);
   const [remoteStreams, setRemoteStreams] = useState({}); 
@@ -16,12 +31,15 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
   const [isCameraOff, setIsCameraOff] = useState(!initialVideo);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [localIsSpeaking, setLocalIsSpeaking] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
   const [remoteAudioSpeaks, setRemoteAudioSpeaks] = useState({}); // { socketId: boolean }
   const [devices, setDevices] = useState({ video: [], audio: [] });
   const [selectedDevices, setSelectedDevices] = useState({ videoId: '', audioId: '' });
   const [showSettings, setShowSettings] = useState(false);
   const [isJoined, setIsJoined] = useState(false); // Lobby state
   const [openDeviceMenu, setOpenDeviceMenu] = useState(null);
+  const [showChat, setShowChat] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   
   const localVideoRef = useRef();
   const localStreamRef = useRef(null);
@@ -141,7 +159,8 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
       analyser.getByteFrequencyData(dataArray);
       let sum = 0; for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
       const average = sum / bufferLength;
-      
+      setMicLevel(Math.min(100, Math.floor(average * 1.5)));
+
       const speaking = average > 30;
       if (speaking !== lastSpeaking) { lastSpeaking = speaking; setLocalIsSpeaking(speaking); }
       animationId = requestAnimationFrame(checkVolume);
@@ -159,8 +178,16 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
 
   const changeDevice = async (type, deviceId) => {
     try {
+      const isMobile = window.matchMedia('(max-width: 800px)').matches;
       const constraints = {
-        video: type === 'video' ? { deviceId: { exact: deviceId }, width: 1280, height: 720 } : (selectedDevices.videoId ? { deviceId: { exact: selectedDevices.videoId } } : true),
+        video: type === 'video'
+          ? {
+              deviceId: { exact: deviceId },
+              width: { ideal: isMobile ? 720 : 960 },
+              height: { ideal: isMobile ? 960 : 720 },
+              aspectRatio: { ideal: isMobile ? 0.75 : 1.333333333 }
+            }
+          : (selectedDevices.videoId ? { deviceId: { exact: selectedDevices.videoId } } : true),
         audio: type === 'audio' ? { deviceId: { exact: deviceId } } : (selectedDevices.audioId ? { deviceId: { exact: selectedDevices.audioId } } : true)
       };
 
@@ -412,7 +439,11 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
     setIsScreenSharing(false);
   };
 
-  const handleLeave = () => { if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => track.stop()); onLeave(); };
+  const handleLeave = () => {
+    if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => track.stop());
+    if (onEndCall) onEndCall();
+    else onLeave();
+  };
 
   // 🛠 Drag Logic
   const handleDragUpdate = (event, info, draggedId) => {
@@ -469,7 +500,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
             onClick={() => setOpenDeviceMenu(openDeviceMenu === menuKey ? null : menuKey)}
           >
             <span>{formatDeviceLabel(selectedDevice?.label, fallback)}</span>
-            <span className="lobby-device-caret">⌄</span>
+            <span className="lobby-device-caret">v</span>
           </button>
           {openDeviceMenu === menuKey && (
             <div className="lobby-device-menu">
@@ -492,6 +523,21 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
         </div>
       </div>
     );
+  };
+
+  const testSpeaker = () => {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(440, ctx.currentTime);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.5);
   };
 
   // 🏛 Lobby / Join UI
@@ -519,6 +565,22 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
           <div className="lobby-details">
             <h2>Ready to join?</h2>
             <p>{remotesCount === 0 ? 'Be the first to join this conversation' : `${remotesCount} others are already in the call`}</p>
+
+            <div className="lobby-test-area">
+              <div className="mic-meter-container">
+                <label><Volume2 size={14} /> Mic test</label>
+                <div className="mic-meter-bg">
+                  <motion.div
+                    className="mic-meter-fill"
+                    animate={{ width: `${micLevel}%` }}
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  />
+                </div>
+              </div>
+              <button className="test-sound-btn" type="button" onClick={testSpeaker}>
+                Test speaker
+              </button>
+            </div>
             
             <div className="lobby-settings">
               {renderLobbyDevicePicker('video', 'Camera', Video, devices.video, selectedDevices.videoId, 'Camera')}
@@ -527,7 +589,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
 
             <div className="lobby-actions">
               <button className="join-btn" onClick={() => setIsJoined(true)}>Join Meeting</button>
-              <button className="cancel-btn" onClick={onLeave}>Cancel</button>
+              <button className="cancel-btn" onClick={onLeave}>Back</button>
             </div>
           </div>
         </motion.div>
@@ -544,6 +606,13 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
           .lobby-details { width: 42%; padding: 34px; display: flex; flex-direction: column; justify-content: center; }
           .lobby-details h2 { margin: 0 0 8px 0; font-size: 1.75rem; letter-spacing: 0; color: var(--text-primary); }
           .lobby-details p { color: var(--text-secondary); margin: 0 0 20px 0; font-size: 0.92rem; line-height: 1.35; }
+          .lobby-test-area { background: var(--bg-primary); border: 1px solid var(--glass-border); border-radius: 8px; padding: 14px; margin-bottom: 18px; }
+          .mic-meter-container { margin-bottom: 12px; }
+          .mic-meter-container label { font-size: 0.72rem; color: var(--text-secondary); font-weight: 700; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+          .mic-meter-bg { height: 6px; background: var(--bg-tertiary); border-radius: 10px; overflow: hidden; }
+          .mic-meter-fill { height: 100%; background: var(--accent-primary); border-radius: 10px; }
+          .test-sound-btn { width: 100%; padding: 10px; background: var(--accent-soft); border: 1px solid #c8ddd5; border-radius: 8px; color: var(--accent-secondary); font-size: 0.82rem; font-weight: 800; cursor: pointer; transition: var(--transition); }
+          .test-sound-btn:hover { background: #d8ebe4; }
           
           .lobby-settings { display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px; }
           .lobby-select-group { display: flex; flex-direction: column; gap: 8px; }
@@ -552,7 +621,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
           .lobby-device-trigger { width: 100%; min-width: 0; height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--bg-secondary); border: 1px solid var(--glass-border); border-radius: 8px; color: var(--text-primary); padding: 0 12px; font-size: 0.9rem; cursor: pointer; text-align: left; }
           .lobby-device-trigger span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
           .lobby-device-caret { color: var(--text-secondary); font-size: 1rem; line-height: 1; }
-          .lobby-device-menu { margin-top: 6px; width: 100%; max-height: 132px; overflow-y: auto; border: 1px solid var(--glass-border); border-radius: 8px; background: var(--bg-secondary); box-shadow: 0 14px 28px rgba(38, 34, 28, 0.12); }
+          .lobby-device-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30; width: 100%; max-height: 132px; overflow-y: auto; border: 1px solid var(--glass-border); border-radius: 8px; background: var(--bg-secondary); box-shadow: 0 14px 28px rgba(38, 34, 28, 0.12); }
           .lobby-device-option { width: 100%; min-width: 0; display: block; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--glass-border); background: transparent; color: var(--text-primary); font-size: 0.88rem; line-height: 1.25; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
           .lobby-device-option:last-child { border-bottom: 0; }
           .lobby-device-option:hover, .lobby-device-option.selected { background: var(--accent-soft); color: var(--accent-secondary); }
@@ -581,6 +650,7 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
             .lobby-root { padding-top: 10px; }
             .lobby-preview { aspect-ratio: 16/10; }
             .lobby-avatar { width: 72px; height: 72px; font-size: 1.8rem; }
+            .lobby-test-area { padding: 12px; margin-bottom: 12px; }
             .lobby-settings { margin-bottom: 14px; }
             .lobby-details { padding: 18px 22px; }
             .lobby-device-menu { max-height: 96px; }
@@ -667,6 +737,10 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
             <Maximize2 />
             <label>Share</label>
           </button>
+          <button onClick={() => setShowChat(true)} className={`action-btn ${showChat ? 'active' : ''}`}>
+            <MessageSquare />
+            <label>Chat</label>
+          </button>
           <button onClick={() => setShowSettings(!showSettings)} className={`action-btn ${showSettings ? 'active' : ''}`}>
             <Settings />
             <label>Settings</label>
@@ -677,6 +751,86 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
           </button>
         </div>
       </footer>
+
+      <AnimatePresence>
+        {showChat && (
+          <motion.aside
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 24 }}
+            className="call-chat-panel"
+          >
+            <div className="call-chat-header">
+              <div>
+                <h3>Room Chat</h3>
+                <span>{messages.length} {messages.length === 1 ? 'message' : 'messages'}</span>
+              </div>
+              <button type="button" className="call-chat-close" onClick={() => setShowChat(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="call-chat-messages">
+              {messages.length > 0 ? (
+                messages.map((msg, index) => {
+                  const isOwnMessage = (token && currentUser && msg.user_id === currentUser.id) ||
+                    (!token && guestId && msg.user_tempeorary_id === guestId);
+
+                  return (
+                    <div
+                      key={`${msg.id || 'call-msg'}-${index}`}
+                      className={`call-chat-message ${isOwnMessage ? 'own' : 'other'}`}
+                    >
+                      <div className="call-chat-meta">
+                        {msg.user_name} · {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      <div className="call-chat-bubble">{msg.message}</div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="call-chat-empty">No messages yet.</div>
+              )}
+            </div>
+
+            <form className="call-chat-form" onSubmit={onSendMessage}>
+              <div className="call-emoji-wrap">
+                <button
+                  type="button"
+                  className="call-emoji-button"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                >
+                  <Smile size={18} />
+                </button>
+                {showEmojiPicker && (
+                  <div className="call-emoji-picker">
+                    <EmojiPicker
+                      width="100%"
+                      height={340}
+                      theme="dark"
+                      previewConfig={{ showPreview: false }}
+                      skinTonesDisabled
+                      onEmojiClick={(emojiData) => {
+                        setChatInput?.(`${chatInput}${emojiData.emoji}`);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              <input
+                type="text"
+                placeholder="Type a message..."
+                value={chatInput}
+                onChange={(e) => setChatInput?.(e.target.value)}
+                onFocus={() => setShowEmojiPicker(false)}
+              />
+              <button type="submit" disabled={!chatInput.trim()}>
+                <Send size={17} />
+              </button>
+            </form>
+          </motion.aside>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showSettings && (
@@ -766,10 +920,45 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
         
         .action-btn.muted, .action-btn.camera-off { color: #f87171; background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.25); }
         .action-btn.sharing { color: #34d399; background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.25); }
+        .action-btn.active { color: #fbbf24; border-color: rgba(251,191,36,0.8); background: rgba(251,191,36,0.12); }
         .action-btn.end-call { background: #ef4444; border: none; width: 60px; color: white; }
         .action-btn.end-call:hover { background: #dc2626; }
+
+        .call-chat-panel { position: absolute; top: 76px; right: 18px; bottom: 104px; z-index: 900; width: min(360px, calc(100vw - 32px)); display: flex; flex-direction: column; overflow: hidden; border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); background: rgba(15, 23, 42, 0.96); color: white; box-shadow: 0 20px 50px rgba(0,0,0,0.55); backdrop-filter: blur(20px); }
+        .call-chat-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .call-chat-header h3 { margin: 0; font-size: 1rem; line-height: 1.2; }
+        .call-chat-header span { color: #94a3b8; font-size: 0.74rem; }
+        .call-chat-close { width: 34px; height: 34px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.06); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .call-chat-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+        .call-chat-message { max-width: 88%; display: flex; flex-direction: column; gap: 3px; }
+        .call-chat-message.own { align-self: flex-end; align-items: flex-end; }
+        .call-chat-message.other { align-self: flex-start; align-items: flex-start; }
+        .call-chat-meta { color: #94a3b8; font-size: 0.68rem; padding: 0 4px; }
+        .call-chat-bubble { padding: 9px 11px; border-radius: 12px; background: rgba(255,255,255,0.08); color: white; font-size: 0.9rem; line-height: 1.35; word-break: break-word; }
+        .call-chat-message.own .call-chat-bubble { background: var(--accent-primary); }
+        .call-chat-empty { margin: auto; color: #94a3b8; font-size: 0.9rem; }
+        .call-chat-form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid rgba(255,255,255,0.1); }
+        .call-emoji-wrap { position: relative; flex: 0 0 auto; }
+        .call-emoji-button { width: 42px; height: 40px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .call-emoji-picker { position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20; width: min(320px, calc(100vw - 56px)); overflow: hidden; border-radius: 14px; box-shadow: 0 18px 42px rgba(0,0,0,0.5); }
+        .call-chat-form input { flex: 1; min-width: 0; height: 40px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: white; outline: none; padding: 0 12px; font-size: 0.9rem; }
+        .call-chat-form input::placeholder { color: #94a3b8; }
+        .call-chat-form > button { width: 42px; height: 40px; border-radius: 10px; border: none; background: var(--accent-primary); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .call-chat-form > button:disabled { opacity: 0.45; cursor: not-allowed; }
         
-        .settings-modal { position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 300px; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
+        .settings-modal { --settings-width: min(360px, calc(100vw - 32px)); position: absolute; bottom: 104px; left: calc((100vw - var(--settings-width)) / 2); z-index: 1000; width: var(--settings-width); background: rgba(15, 23, 42, 0.96); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 18px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); color: white; }
+        .settings-content { display: flex; flex-direction: column; gap: 14px; }
+        .settings-content h3 { margin: 0; color: white; font-size: 1.05rem; line-height: 1.2; font-weight: 800; }
+        .setting-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+        .setting-group label { color: #cbd5e1; display: flex; align-items: center; gap: 8px; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+        .setting-group select { width: 100%; min-width: 0; max-width: 100%; height: 42px; border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; background-color: rgba(255,255,255,0.06); color: white; padding: 0 38px 0 12px; font-size: 0.9rem; outline: none; appearance: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+          background-repeat: no-repeat; background-position: right 12px center;
+        }
+        .setting-group select:focus { border-color: #94a3b8; box-shadow: 0 0 0 3px rgba(148,163,184,0.16); }
+        .setting-group select option { background: #0f172a; color: white; }
+        .close-settings { width: 100%; height: 42px; border: none; border-radius: 10px; background: white; color: #0f172a; font-size: 0.92rem; font-weight: 800; cursor: pointer; transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .close-settings:hover { background: #e5e7eb; }
         
         @media (max-width: 600px) {
           .call-header { padding: 10px 16px; }
@@ -779,6 +968,9 @@ const CallOverlay = ({ roomId, isRoomJoined, onLeave, initialVideo = true, initi
           .action-btn label { display: none; }
           .action-btn.end-call { width: 54px; }
           .user-avatar { width: 60px; height: 60px; font-size: 1.5rem; }
+          .call-chat-panel { top: 60px; left: 14px; right: 14px; bottom: 92px; width: auto; border-radius: 14px; }
+          .call-emoji-picker { width: calc(100vw - 56px); }
+          .settings-modal { --settings-width: calc(100vw - 28px); bottom: 92px; left: 14px; right: 14px; width: auto; padding: 16px; border-radius: 14px; }
         }
       `}</style>
     </div>

@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import EmojiPicker from 'emoji-picker-react';
 import {
   Send,
   ArrowLeft,
@@ -16,7 +17,6 @@ import {
   Video as VideoIcon
 } from 'lucide-react';
 import CallOverlay from '../components/CallOverlay';
-import PreJoinModal from '../components/PreJoinModal';
 import './ChatRoom.css';
 
 const ChatRoom = () => {
@@ -28,6 +28,7 @@ const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
   const [participants, setParticipants] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   // Guest & Privacy States
   const [guestName, setGuestName] = useState(localStorage.getItem('guest_name') || '');
@@ -47,10 +48,9 @@ const ChatRoom = () => {
   const [isInCall, setIsInCall] = useState(false);
   const [callType, setCallType] = useState(null); // 'audio' or 'video'
   const [activeCall, setActiveCall] = useState(null); // { participants_count }
-  const [showPreJoin, setShowPreJoin] = useState(false);
   const [isSocketJoined, setIsSocketJoined] = useState(false);
   const [initialSettings, setInitialSettings] = useState({ micOn: true, videoOn: true });
-  const [hasJoined, setHasJoined] = useState(false);
+  const [hasShownCallLobby, setHasShownCallLobby] = useState(false);
   const [notification, setNotification] = useState(null);
 
   const messagesEndRef = useRef(null);
@@ -107,14 +107,6 @@ const ChatRoom = () => {
     }
 
     const initializeRoom = async () => {
-      // Show PreJoin instead of joining immediately
-      if (!showPreJoin && !hasJoined) {
-        setShowPreJoin(true);
-        return;
-      }
-      
-      if (!hasJoined) return; // Wait for PreJoin completion
-
       await fetchRoomData();
 
       const roomIdInt = parseInt(id);
@@ -125,6 +117,12 @@ const ChatRoom = () => {
         if (response?.success) {
           console.log(`✅ [Socket] Successfully joined room_${roomIdInt}`);
           setIsSocketJoined(true);
+          if (!hasShownCallLobby) {
+            setHasShownCallLobby(true);
+            setInitialSettings({ micOn: true, videoOn: true });
+            setCallType('video');
+            setIsInCall(true);
+          }
         }
       });
     };
@@ -136,7 +134,7 @@ const ChatRoom = () => {
     return () => {
       socket.off('connect', initializeRoom);
     };
-  }, [socket, id, guestId, token, guestName, showGuestPrompt, showPasswordPrompt, showPreJoin, hasJoined]);
+  }, [socket, id, guestId, token, guestName, showGuestPrompt, showPasswordPrompt, hasShownCallLobby]);
 
   // 4. Socket Events Effect
   useEffect(() => {
@@ -182,7 +180,7 @@ const ChatRoom = () => {
       setActiveCall(data);
       
       // Auto-join only if we are specifically authorized and not already in
-      if (!isInCall && !showGuestPrompt && !showPasswordPrompt && !showPreJoin && hasJoined) {
+      if (!isInCall && !showGuestPrompt && !showPasswordPrompt && hasShownCallLobby) {
         console.log("🚀 [Socket] Automatically joining existing call...");
         setCallType('video');
         setIsInCall(true);
@@ -273,7 +271,7 @@ const ChatRoom = () => {
   };
 
   const handleSendMessage = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     console.log('Attempting to send message:', newMessage);
     console.log('Socket state:', socket ? 'Connected' : 'Disconnected');
 
@@ -291,14 +289,6 @@ const ChatRoom = () => {
 
     console.log('Message emitted');
     setNewMessage('');
-  };
-
-  const onPreJoinSubmit = (settings) => {
-    setInitialSettings(settings);
-    setShowPreJoin(false);
-    setHasJoined(true);
-    setCallType(settings.videoOn ? 'video' : 'audio');
-    setIsInCall(true);
   };
 
   return (
@@ -357,14 +347,6 @@ const ChatRoom = () => {
             </form>
           </motion.div>
         </div>
-      )}
-
-      {/* Pre-Join Screen */}
-      {showPreJoin && (
-        <PreJoinModal 
-          userName={user?.name || guestName} 
-          onJoin={onPreJoinSubmit} 
-        />
       )}
 
       {/* Join Notification Toast */}
@@ -449,11 +431,22 @@ const ChatRoom = () => {
             isRoomJoined={isSocketJoined}
             initialVideo={initialSettings.videoOn}
             initialMuted={!initialSettings.micOn}
+            messages={messages}
+            currentUser={user}
+            token={token}
+            guestId={guestId}
+            chatInput={newMessage}
+            setChatInput={setNewMessage}
+            onSendMessage={handleSendMessage}
             onLeave={() => { 
               setIsInCall(false); 
               setCallType(null);
-              navigate('/');
             }} 
+            onEndCall={() => {
+              setIsInCall(false);
+              setCallType(null);
+              navigate('/');
+            }}
           />
         )}
       </AnimatePresence>
@@ -491,6 +484,20 @@ const ChatRoom = () => {
 
       {/* Input Area */}
       <div className="input-area">
+        {showEmojiPicker && (
+          <div className="room-emoji-picker">
+            <EmojiPicker
+              width="100%"
+              height={340}
+              theme="light"
+              previewConfig={{ showPreview: false }}
+              skinTonesDisabled
+              onEmojiClick={(emojiData) => {
+                setNewMessage(`${newMessage}${emojiData.emoji}`);
+              }}
+            />
+          </div>
+        )}
         <form
           onSubmit={handleSendMessage}
           className="glass input-form"
@@ -504,8 +511,14 @@ const ChatRoom = () => {
             placeholder="Type a message..."
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
+            onFocus={() => setShowEmojiPicker(false)}
           />
-          <button type="button" className="btn-icon hide-mobile" style={{ padding: '4px' }}>
+          <button
+            type="button"
+            className="btn-icon"
+            style={{ padding: '4px' }}
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          >
             <Smile size={20} />
           </button>
           <button
