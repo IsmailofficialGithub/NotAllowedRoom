@@ -272,15 +272,14 @@
 
 .room-private-badge {
   background: #f5e8e6;
-  padding: 4px 8px;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   color: #9f382f;
-  font-size: 0.7rem;
-  font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 4px;
-  line-height: 1;
+  justify-content: center;
+  flex: 0 0 auto;
 }
 
 .room-count {
@@ -406,11 +405,8 @@
   }
 
   .room-private-badge {
-    padding: 4px 6px;
-  }
-
-  .room-private-badge span {
-    display: none;
+    width: 26px;
+    height: 26px;
   }
 
   .room-count {

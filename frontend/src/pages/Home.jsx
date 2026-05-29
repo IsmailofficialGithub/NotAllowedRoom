@@ -427,8 +427,8 @@ const Home = () => {
                     <Share2 size={15} />
                   </button>
                   {room.is_private && (
-                    <div className="room-private-badge">
-                      <Lock size={12} /> <span>PRIVATE</span>
+                    <div className="room-private-badge" title="Private room">
+                      <Lock size={13} />
                     </div>
                   )}
                   <div className="room-count">
