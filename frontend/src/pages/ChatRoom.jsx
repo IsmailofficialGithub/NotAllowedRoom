@@ -56,6 +56,7 @@ const ChatRoom = () => {
   const [callType, setCallType] = useState(null); // 'audio' or 'video'
   const [activeCall, setActiveCall] = useState(null); // { participants_count }
   const [isSocketJoined, setIsSocketJoined] = useState(false);
+  const [resolvedRoomId, setResolvedRoomId] = useState(null);
   const [initialSettings, setInitialSettings] = useState({ micOn: true, videoOn: true });
   const [hasShownCallLobby, setHasShownCallLobby] = useState(false);
   const [notification, setNotification] = useState(null);
@@ -70,15 +71,15 @@ const ChatRoom = () => {
 
   // Update ref whenever they change
   useEffect(() => {
-    currentRoomInfo.current = { id, guestId };
-  }, [id, guestId]);
+    currentRoomInfo.current = { id: resolvedRoomId || id, guestId };
+  }, [id, resolvedRoomId, guestId]);
 
   useEffect(() => {
     if (!socket || !id) return;
 
     const onRoomDeleted = (deletedRoom) => {
       const deletedRoomId = typeof deletedRoom === 'object' ? deletedRoom.room_id : deletedRoom;
-      if (Number(deletedRoomId) !== Number(id)) return;
+      if (resolvedRoomId && Number(deletedRoomId) !== Number(resolvedRoomId)) return;
 
       setIsInCall(false);
       setCallType(null);
@@ -98,7 +99,7 @@ const ChatRoom = () => {
     };
 
     const onParticipantRemoved = (data) => {
-      if (Number(data.room_id) !== Number(id)) return;
+      if (resolvedRoomId && Number(data.room_id) !== Number(resolvedRoomId)) return;
 
       const removedUserId = data.user_id ? String(data.user_id) : null;
       const removedGuestId = data.guest_id ? String(data.guest_id) : null;
@@ -129,7 +130,7 @@ const ChatRoom = () => {
     };
 
     const onRoomExpiring = (data) => {
-      if (Number(data.room_id) !== Number(id)) return;
+      if (resolvedRoomId && Number(data.room_id) !== Number(resolvedRoomId)) return;
 
       setNotification({
         message: data.message || 'This guest room will close soon',
@@ -149,7 +150,7 @@ const ChatRoom = () => {
         window.clearTimeout(deletedRoomRedirectRef.current);
       }
     };
-  }, [socket, id, user, guestId, navigate]);
+  }, [socket, id, resolvedRoomId, user, guestId, navigate]);
 
   // 1. Cleanup for UNMOUNT and NAVIGATION (Back button, etc)
   useEffect(() => {
@@ -174,7 +175,7 @@ const ChatRoom = () => {
     const handleUnload = () => {
       // We must include user_id because beacon requests don't include the Authorization header
       const data = JSON.stringify({ 
-        room_id: id, 
+        room_id: resolvedRoomId || id, 
         user_id: user?.id, 
         guest_id: guestId 
       });
@@ -182,7 +183,7 @@ const ChatRoom = () => {
     };
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
-  }, [id, guestId, user]);
+  }, [id, resolvedRoomId, guestId, user]);
 
   // 3. MAIN SOCKET LOGIC: Join and Listen
   useEffect(() => {
@@ -199,7 +200,7 @@ const ChatRoom = () => {
       const roomReady = await fetchRoomData();
       if (!roomReady || isSocketJoined) return;
 
-      const roomIdInt = parseInt(id);
+      const roomIdInt = Number(roomReady.room_id);
       const guestIdToUse = guestId || localStorage.getItem('guest_id');
       
       console.log(`🔗 [Socket] Joining room_${roomIdInt}`);
@@ -224,7 +225,7 @@ const ChatRoom = () => {
     return () => {
       socket.off('connect', initializeRoom);
     };
-  }, [socket, id, guestId, token, guestName, showGuestPrompt, showPasswordPrompt, hasShownCallLobby]);
+  }, [socket, id, guestId, token, guestName, showGuestPrompt, showPasswordPrompt, hasShownCallLobby, isSocketJoined]);
 
   // 4. Socket Events Effect
   useEffect(() => {
@@ -237,7 +238,7 @@ const ChatRoom = () => {
     };
 
     const onMessagesDeleted = (data) => {
-      if (Number(data.room_id) !== Number(id)) return;
+      if (Number(data.room_id) !== Number(resolvedRoomId || id)) return;
       const deletedIds = new Set((data.message_ids || []).map(Number));
       setMessages(prev => prev.filter(msg => !deletedIds.has(Number(msg.id))));
       setSelectedMessageIds(prev => {
@@ -311,7 +312,7 @@ const ChatRoom = () => {
       socket.off('call_in_progress', onCallInProgress);
       socket.off('call_ended', onCallEnded);
     };
-  }, [socket, id, isSocketJoined, isInCall, user, guestId, navigate]);
+  }, [socket, id, resolvedRoomId, isSocketJoined, isInCall, user, guestId, navigate]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -341,14 +342,18 @@ const ChatRoom = () => {
         localStorage.setItem('guest_id', joinRes.data.guest_id);
       }
 
+      if (joinRes.data.room_id) {
+        setResolvedRoomId(joinRes.data.room_id);
+      }
+
       if (joinRes.data.name && !token) {
         setGuestName(joinRes.data.name);
         localStorage.setItem('guest_name', joinRes.data.name);
       }
 
       const [msgRes, partRes] = await Promise.all([
-        axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms/${id}/messages`, { headers }),
-        axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms/${id}/participants`, { headers })
+        axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms/${joinRes.data.room_id || id}/messages`, { headers }),
+        axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms/${joinRes.data.room_id || id}/participants`, { headers })
       ]);
 
       setMessages(msgRes.data.data);
@@ -356,7 +361,7 @@ const ChatRoom = () => {
       setShowPasswordPrompt(false);
       setError('');
       setIsCheckingRoomAccess(false);
-      return true;
+      return { room_id: joinRes.data.room_id || id };
     } catch (error) {
       if (isDuplicateRequest(error)) {
         setIsCheckingRoomAccess(false);
@@ -402,7 +407,7 @@ const ChatRoom = () => {
 
     sendMessageLockRef.current = true;
     socket.emit('send_message', {
-      room_id: id,
+      room_id: resolvedRoomId || id,
       message: newMessage,
       guest_id: guestId,
       guest_name: guestName
@@ -435,7 +440,7 @@ const ChatRoom = () => {
 
     deleteMessagesLockRef.current = true;
     socket.emit('delete_messages', {
-      room_id: id,
+      room_id: resolvedRoomId || id,
       message_ids: messageIds,
       guest_id: guestId
     }, (response) => {
@@ -600,7 +605,7 @@ const ChatRoom = () => {
       <AnimatePresence>
         {isInCall && (
           <CallOverlay 
-            roomId={id} 
+            roomId={resolvedRoomId || id} 
             isRoomJoined={isSocketJoined}
             initialVideo={initialSettings.videoOn}
             initialMuted={!initialSettings.micOn}

@@ -14,7 +14,7 @@ export const JoinRoom = async (req, res) => {
 
         // 1. Check if room exists and LOCK it
         const roomResult = await client.query(
-            "SELECT * FROM rooms WHERE id = $1 AND is_active = true FOR UPDATE", 
+            "SELECT * FROM rooms WHERE (id::TEXT = $1 OR room_code = $1) AND is_active = true FOR UPDATE", 
             [room_id]
         );
         
@@ -26,7 +26,7 @@ export const JoinRoom = async (req, res) => {
         const room = roomResult.rows[0];
         const now = new Date().toISOString();
         // 2. Identify the user/guest identifiers
-        const roomIdInt = parseInt(room_id);
+        const roomIdInt = Number(room.id);
         const userId = req.user?.id || null;
         let pName = (req.user?.name || guest_name || 'Guest').trim();
         const pEmail = req.user?.email || null;
@@ -87,6 +87,8 @@ export const JoinRoom = async (req, res) => {
             return res.status(200).json({ 
                 message: "Joined successfully (reused)", 
                 participantId: participant.id,
+                room_id: roomIdInt,
+                room_code: room.room_code,
                 guest_id: pGuestId,
                 name: pName
             });
@@ -116,6 +118,8 @@ export const JoinRoom = async (req, res) => {
         res.status(200).json({ 
             message: "Joined successfully (new)", 
             participantId: newId,
+            room_id: roomIdInt,
+            room_code: room.room_code,
             guest_id: pGuestId,
             name: pName 
         });
@@ -132,6 +136,16 @@ export const JoinRoom = async (req, res) => {
 export const GetParticipants = async (req, res) => {
     try {
         const { room_id } = req.params;
+        const roomResult = await pool.query(
+            "SELECT id FROM rooms WHERE id::TEXT = $1 OR room_code = $1",
+            [room_id]
+        );
+
+        if (roomResult.rows.length === 0) {
+            return res.status(404).json({ message: "Room not found" });
+        }
+
+        const resolvedRoomId = roomResult.rows[0].id;
         const page = Math.max(parseInt(req.query.page || '1', 10), 1);
         const limit = Math.min(Math.max(parseInt(req.query.limit || '8', 10), 1), 50);
         const offset = (page - 1) * limit;
@@ -144,11 +158,11 @@ export const GetParticipants = async (req, res) => {
                  WHERE p.room_id = $1 AND p.is_removed = false
                  ORDER BY p.created_at DESC
                  LIMIT $2 OFFSET $3`,
-                [room_id, limit, offset]
+                [resolvedRoomId, limit, offset]
             ),
             pool.query(
                 "SELECT COUNT(*) FROM participants WHERE room_id = $1 AND is_removed = false",
-                [room_id]
+                [resolvedRoomId]
             )
         ]);
 

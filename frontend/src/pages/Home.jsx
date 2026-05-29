@@ -175,7 +175,7 @@ const Home = () => {
   };
 
   const getRoomUrl = (room) => {
-    const roomId = typeof room === 'object' ? room.id : room;
+    const roomId = typeof room === 'object' ? (room.room_code || room.id) : room;
     const inviteToken = typeof room === 'object' ? room.invite_token : null;
     const roomUrl = new URL(`/room/${roomId}`, window.location.origin);
 
@@ -232,8 +232,8 @@ const Home = () => {
     }
   };
 
-  const handleJoinRoom = (roomId) => {
-    navigate(`/room/${roomId}`);
+  const handleJoinRoom = (room) => {
+    navigate(`/room/${room.room_code || room.id}`);
   };
 
   const isRoomOwner = (room) => {
@@ -418,7 +418,7 @@ const Home = () => {
               key={room.id}
               whileHover={{ y: -2 }}
               className="glass card room-card"
-              onClick={() => handleJoinRoom(room.id)}
+              onClick={() => handleJoinRoom(room)}
             >
               <div className="room-card-top">
                 <div className="room-icon">
@@ -586,7 +586,7 @@ const Home = () => {
               </button>
               <button
                 type="button"
-                onClick={() => navigate(`/room/${createdRoom.id}`)}
+                onClick={() => navigate(`/room/${createdRoom.room_code || createdRoom.id}`)}
                 className="btn btn-primary"
               >
                 Enter Room <ArrowRight size={16} />

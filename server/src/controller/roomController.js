@@ -1,5 +1,6 @@
 import { pool } from "../config/postgress_db.js";
 import { v4 as uuidv4 } from 'uuid';
+import { generateRoomCode } from "../lib/roomCode.js";
 
 const activeRoomCreations = new Set();
 
@@ -32,11 +33,19 @@ export const CreateRoom = async (req, res) => {
 
         const now = new Date().toISOString();
         const inviteToken = is_private ? uuidv4() : null;
+        let result;
 
-        const result = await pool.query(
-            "INSERT INTO rooms (host_id, host_temporary_id, host_name, room_name, created_at, updated_at, is_active, is_deleted, is_private, room_password, invite_token) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *",
-            [userId, hTemporaryId, hName, room_name, now, now, true, false, is_private || false, room_password || null, inviteToken]
-        );
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            try {
+                result = await pool.query(
+                    "INSERT INTO rooms (host_id, host_temporary_id, host_name, room_name, created_at, updated_at, is_active, is_deleted, is_private, room_password, invite_token, room_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *",
+                    [userId, hTemporaryId, hName, room_name, now, now, true, false, is_private || false, room_password || null, inviteToken, generateRoomCode()]
+                );
+                break;
+            } catch (error) {
+                if (error.code !== '23505' || attempt === 4) throw error;
+            }
+        }
 
         const roomData = {
             ...result.rows[0],

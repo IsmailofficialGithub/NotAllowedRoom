@@ -40,6 +40,14 @@ export const SendMessage = async (req, res) => {
 export const GetMessages = async (req, res) => {
     try {
         const { room_id } = req.params;
+        const roomResult = await pool.query(
+            "SELECT id FROM rooms WHERE id::TEXT = $1 OR room_code = $1",
+            [room_id]
+        );
+
+        if (roomResult.rows.length === 0) {
+            return res.status(404).json({ message: "Room not found" });
+        }
         
         const result = await pool.query(
             `SELECT m.*, 
@@ -49,7 +57,7 @@ export const GetMessages = async (req, res) => {
              LEFT JOIN participants p ON (m.user_id = p.user_id OR m.user_tempeorary_id = p.user_tempeorary_id) AND m.room_id = p.room_id
              WHERE m.room_id = $1 
              ORDER BY m.created_at ASC`,
-            [room_id]
+            [roomResult.rows[0].id]
         );
 
         res.status(200).json({
