@@ -88,17 +88,17 @@
   .home-header {
     display: grid;
     grid-template-columns: 1fr auto;
-    align-items: end;
+    align-items: center;
     margin-bottom: 18px;
     padding-top: 18px;
-    gap: 14px;
+    gap: 10px 12px;
   }
 
   .home-header .date-time-badge {
     grid-column: 1 / -1;
-    grid-row: 2;
     width: 100%;
     justify-content: flex-start;
+    order: initial;
   }
 
   .home-header .date-time-badge svg {
@@ -136,6 +136,10 @@
   .home-brand-copy p {
     font-size: 0.84rem;
     line-height: 1.25;
+    max-width: calc(100vw - 150px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

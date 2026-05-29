@@ -3,6 +3,24 @@ import axios from 'axios';
 
 const AuthContext = createContext();
 
+const cleanAuthValue = (value) => {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  return trimmed && trimmed !== 'undefined' && trimmed !== 'null' ? trimmed : '';
+};
+
+const normalizeUser = (userData) => {
+  if (!userData) return null;
+  const email = cleanAuthValue(userData.email);
+  const name = cleanAuthValue(userData.name) || email;
+
+  return {
+    ...userData,
+    name,
+    email
+  };
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
@@ -13,8 +31,11 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (token) {
       // In a real app, you might want to verify the token with the backend here
-      const savedUser = JSON.parse(localStorage.getItem('user'));
-      if (savedUser) setUser(savedUser);
+      const savedUser = normalizeUser(JSON.parse(localStorage.getItem('user')));
+      if (savedUser) {
+        setUser(savedUser);
+        localStorage.setItem('user', JSON.stringify(savedUser));
+      }
     }
     setLoading(false);
   }, [token]);
@@ -24,11 +45,11 @@ export const AuthProvider = ({ children }) => {
       const response = await axios.post(`${API_URL}/login`, { email, password });
       const { sessionToken, userId, name, email: responseEmail } = response.data;
       
-      const userData = {
+      const userData = normalizeUser({
         id: userId,
-        name: name || responseEmail || email,
+        name,
         email: responseEmail || email
-      };
+      });
       setToken(sessionToken);
       setUser(userData);
       

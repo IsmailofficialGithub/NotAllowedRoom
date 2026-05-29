@@ -51,19 +51,23 @@
 
 @media (max-width: 640px) {
   .date-time-badge {
-    padding: 7px 8px;
+    padding: 8px 10px;
   }
 
   .date-time-badge svg {
     display: none;
   }
 
+  .date-time-copy {
+    width: 100%;
+  }
+
   .date-time-clock {
-    font-size: 0.8rem;
+    font-size: 0.86rem;
   }
 
   .date-time-date {
-    font-size: 0.64rem;
+    font-size: 0.68rem;
     white-space: normal;
     line-height: 1.15;
   }

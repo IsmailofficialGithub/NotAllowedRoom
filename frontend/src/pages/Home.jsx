@@ -38,7 +38,13 @@ const Home = () => {
 
   const { user, logout, token } = useAuth();
   const navigate = useNavigate();
-  const displayName = user?.name || user?.email || 'there';
+  const cleanUserValue = (value) => {
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    return trimmed && trimmed !== 'undefined' && trimmed !== 'null' ? trimmed : '';
+  };
+  const userEmail = cleanUserValue(user?.email);
+  const displayName = cleanUserValue(user?.name) || userEmail || 'there';
 
   const API_URL = `${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms`;
 
@@ -159,13 +165,13 @@ const Home = () => {
             <h1 className="home-brand-title" title="NotAllowedRoom" tabIndex={0}>
               NAR
             </h1>
-            <p>
+            <p title={userEmail || undefined}>
             {token ? `Welcome back, ${displayName}` : 'Welcome, Explore public rooms'}
             </p>
           </div>
         </div>
+        <DateTimeBadge />
         <div className="home-header-actions">
-          <DateTimeBadge />
           <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
             <Plus size={20} /> <span className="hide-mobile">Create Room</span>
           </button>
