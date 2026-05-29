@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import CallOverlay from '../components/CallOverlay';
 import DateTimeBadge from '../components/DateTimeBadge';
+import { isDuplicateRequest } from '../lib/preventDuplicateRequests';
 import './ChatRoom.css';
 
 const ChatRoom = () => {
@@ -59,6 +60,9 @@ const ChatRoom = () => {
 
   const messagesEndRef = useRef(null);
   const currentRoomInfo = useRef({ id, guestId });
+  const roomFetchLockRef = useRef(false);
+  const sendMessageLockRef = useRef(false);
+  const deleteMessagesLockRef = useRef(false);
 
 
   // Update ref whenever they change
@@ -111,7 +115,8 @@ const ChatRoom = () => {
     }
 
     const initializeRoom = async () => {
-      await fetchRoomData();
+      const roomReady = await fetchRoomData();
+      if (!roomReady || isSocketJoined) return;
 
       const roomIdInt = parseInt(id);
       const guestIdToUse = guestId || localStorage.getItem('guest_id');
@@ -232,7 +237,11 @@ const ChatRoom = () => {
   };
 
   const fetchRoomData = async (joinPassword = '') => {
+    const requestKey = `${id}:${joinPassword || password || ''}`;
+    if (roomFetchLockRef.current === requestKey) return false;
+
     try {
+      roomFetchLockRef.current = requestKey;
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
       // Attempt to join first to verify access
@@ -263,7 +272,9 @@ const ChatRoom = () => {
       setParticipants(partRes.data.data);
       setShowPasswordPrompt(false);
       setError('');
+      return true;
     } catch (error) {
+      if (isDuplicateRequest(error)) return false;
       if (error.response?.status === 401) {
         setShowPasswordPrompt(true);
         if (joinPassword) setError('Invalid room password');
@@ -271,6 +282,9 @@ const ChatRoom = () => {
         setShowGuestPrompt(true);
       }
       console.error('Error fetching room data:', error);
+      return false;
+    } finally {
+      roomFetchLockRef.current = false;
     }
   };
 
@@ -289,6 +303,7 @@ const ChatRoom = () => {
 
   const handleSendMessage = (e) => {
     if (e) e.preventDefault();
+    if (sendMessageLockRef.current) return;
     console.log('Attempting to send message:', newMessage);
     console.log('Socket state:', socket ? 'Connected' : 'Disconnected');
 
@@ -297,6 +312,7 @@ const ChatRoom = () => {
       return;
     }
 
+    sendMessageLockRef.current = true;
     socket.emit('send_message', {
       room_id: id,
       message: newMessage,
@@ -306,6 +322,9 @@ const ChatRoom = () => {
 
     console.log('Message emitted');
     setNewMessage('');
+    window.setTimeout(() => {
+      sendMessageLockRef.current = false;
+    }, 300);
   };
 
   const isOwnMessage = (msg) => (token && user && msg.user_id === user.id) ||
@@ -324,17 +343,23 @@ const ChatRoom = () => {
 
   const handleDeleteSelectedMessages = () => {
     const messageIds = Array.from(selectedMessageIds);
-    if (messageIds.length === 0 || !socket) return;
+    if (messageIds.length === 0 || !socket || deleteMessagesLockRef.current) return;
 
+    deleteMessagesLockRef.current = true;
     socket.emit('delete_messages', {
       room_id: id,
       message_ids: messageIds,
       guest_id: guestId
     }, (response) => {
+      deleteMessagesLockRef.current = false;
       if (!response?.success) {
         console.error('Delete messages failed:', response?.message);
       }
     });
+
+    window.setTimeout(() => {
+      deleteMessagesLockRef.current = false;
+    }, 3000);
   };
 
   return (

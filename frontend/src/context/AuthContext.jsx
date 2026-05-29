@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useRef, useState, useEffect } from 'react';
 import axios from 'axios';
+import { isDuplicateRequest } from '../lib/preventDuplicateRequests';
 
 const AuthContext = createContext();
 
@@ -25,6 +26,8 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
+  const loginLockRef = useRef(false);
+  const registerLockRef = useRef(false);
 
   const API_URL = `${import.meta.env.VITE_BACKEND_URL}/api/v1/auth`;
 
@@ -41,7 +44,12 @@ export const AuthProvider = ({ children }) => {
   }, [token]);
 
   const login = async (email, password) => {
+    if (loginLockRef.current) {
+      return { success: false, message: 'Request already in progress' };
+    }
+
     try {
+      loginLockRef.current = true;
       const response = await axios.post(`${API_URL}/login`, { email, password });
       const { sessionToken, userId, name, email: responseEmail } = response.data;
       
@@ -58,22 +66,45 @@ export const AuthProvider = ({ children }) => {
       
       return { success: true };
     } catch (error) {
+      if (isDuplicateRequest(error)) {
+        return {
+          success: false,
+          message: 'Request already in progress'
+        };
+      }
+
       return { 
         success: false, 
         message: error.response?.data?.message || 'Login failed' 
       };
+    } finally {
+      loginLockRef.current = false;
     }
   };
 
   const register = async (name, email, password) => {
+    if (registerLockRef.current) {
+      return { success: false, message: 'Request already in progress' };
+    }
+
     try {
+      registerLockRef.current = true;
       await axios.post(`${API_URL}/register`, { name, email, password });
       return { success: true };
     } catch (error) {
+      if (isDuplicateRequest(error)) {
+        return {
+          success: false,
+          message: 'Request already in progress'
+        };
+      }
+
       return { 
         success: false, 
         message: error.response?.data?.message || 'Registration failed' 
       };
+    } finally {
+      registerLockRef.current = false;
     }
   };
 

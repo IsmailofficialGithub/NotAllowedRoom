@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -24,6 +24,7 @@ import {
 
 import { useSocket } from '../context/SocketContext';
 import DateTimeBadge from '../components/DateTimeBadge';
+import { isDuplicateRequest } from '../lib/preventDuplicateRequests';
 import './Home.css';
 
 const Home = () => {
@@ -53,6 +54,10 @@ const Home = () => {
   const [participantsModal, setParticipantsModal] = useState(null);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [participantsError, setParticipantsError] = useState('');
+  const createRoomLockRef = useRef(false);
+  const updateRoomLockRef = useRef(false);
+  const deleteRoomLockRef = useRef(false);
+  const participantsLockRef = useRef(false);
 
   const { user, logout, token } = useAuth();
   const navigate = useNavigate();
@@ -111,6 +116,7 @@ const Home = () => {
       const response = await axios.get(`${API_URL}?guest_id=${gId}`, { headers });
       setRooms(response.data.data);
     } catch (error) {
+      if (isDuplicateRequest(error)) return;
       console.error('Error fetching rooms:', error);
     } finally {
       setLoading(false);
@@ -119,7 +125,7 @@ const Home = () => {
 
   const handleCreateRoom = async (e) => {
     if (e) e.preventDefault();
-    if (isCreatingRoom) return;
+    if (createRoomLockRef.current) return;
     
     if (!token && !guestName.trim()) {
       setShowGuestPrompt(true);
@@ -128,6 +134,7 @@ const Home = () => {
     }
 
     try {
+      createRoomLockRef.current = true;
       setIsCreatingRoom(true);
       setCreateRoomError('');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -155,9 +162,11 @@ const Home = () => {
       setCreatedRoom(response.data.room);
       setCopiedRoomUrl(false);
     } catch (error) {
+      if (isDuplicateRequest(error)) return;
       setCreateRoomError(error.response?.data?.message || 'Could not create room. Please try again.');
       console.error('Error creating room:', error);
     } finally {
+      createRoomLockRef.current = false;
       setIsCreatingRoom(false);
     }
   };
@@ -209,9 +218,10 @@ const Home = () => {
 
   const handleUpdateRoom = async (e) => {
     e.preventDefault();
-    if (!editingRoom || isUpdatingRoom) return;
+    if (!editingRoom || updateRoomLockRef.current) return;
 
     try {
+      updateRoomLockRef.current = true;
       setIsUpdatingRoom(true);
       const response = await axios.patch(`${API_URL}/${editingRoom.id}`, {
         room_name: editingRoomName,
@@ -225,16 +235,19 @@ const Home = () => {
       )));
       setEditingRoom(null);
     } catch (error) {
+      if (isDuplicateRequest(error)) return;
       console.error('Error updating room:', error);
     } finally {
+      updateRoomLockRef.current = false;
       setIsUpdatingRoom(false);
     }
   };
 
   const handleDeleteRoom = async () => {
-    if (!deletingRoom) return;
+    if (!deletingRoom || deleteRoomLockRef.current) return;
 
     try {
+      deleteRoomLockRef.current = true;
       await axios.delete(`${API_URL}/${deletingRoom.id}`, {
         headers: getHeaders(),
         data: { guest_id: guestId }
@@ -242,11 +255,17 @@ const Home = () => {
       setRooms(prev => prev.filter(room => Number(room.id) !== Number(deletingRoom.id)));
       setDeletingRoom(null);
     } catch (error) {
+      if (isDuplicateRequest(error)) return;
       console.error('Error deleting room:', error);
+    } finally {
+      deleteRoomLockRef.current = false;
     }
   };
 
   const openParticipants = async (room, page = 1) => {
+    const requestKey = `${room.id}:${page}`;
+    if (participantsLockRef.current === requestKey) return;
+
     setParticipantsModal(prev => ({
       room,
       data: prev?.room?.id === room.id ? prev.data : [],
@@ -256,6 +275,7 @@ const Home = () => {
     setParticipantsError('');
 
     try {
+      participantsLockRef.current = requestKey;
       const response = await axios.get(`${API_URL}/${room.id}/participants?page=${page}&limit=6`, {
         headers: getHeaders()
       });
@@ -265,9 +285,11 @@ const Home = () => {
         pagination: response.data.pagination
       });
     } catch (error) {
+      if (isDuplicateRequest(error)) return;
       setParticipantsError('Could not load participants.');
       console.error('Error loading participants:', error);
     } finally {
+      participantsLockRef.current = false;
       setParticipantsLoading(false);
     }
   };
