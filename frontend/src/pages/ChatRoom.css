@@ -60,6 +60,43 @@
   scrollbar-width: thin;
 }
 
+.messages-empty-state {
+  flex: 1;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 24px 16px;
+}
+
+.messages-empty-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.messages-empty-state h2 {
+  margin: 0 0 6px;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.messages-empty-state p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
 .message-selection-bar {
   display: flex;
   align-items: center;

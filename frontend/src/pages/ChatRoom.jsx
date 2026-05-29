@@ -618,6 +618,15 @@ const ChatRoom = () => {
         </div>
       )}
       <div className="messages-area">
+        {messages.length === 0 ? (
+          <div className="messages-empty-state">
+            <div className="messages-empty-icon">
+              <Hash size={26} />
+            </div>
+            <h2>No messages yet</h2>
+            <p>Start the conversation when you are ready.</p>
+          </div>
+        ) : (
         <AnimatePresence>
           {messages.map((msg, index) => {
             const ownMessage = isOwnMessage(msg);
@@ -656,6 +665,7 @@ const ChatRoom = () => {
             );
           })}
         </AnimatePresence>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
