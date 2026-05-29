@@ -176,6 +176,45 @@
   margin-bottom: 22px;
 }
 
+.rooms-toolbar-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.view-toggle button {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.view-toggle button:hover,
+.view-toggle button.active {
+  background: var(--accent-soft);
+  color: var(--accent-primary);
+}
+
 .rooms-summary {
   display: flex;
   flex-direction: column;
@@ -243,9 +282,48 @@
   gap: 14px;
 }
 
+.room-grid.list-layout {
+  grid-template-columns: 1fr;
+}
+
 .room-card {
   cursor: pointer;
   min-width: 0;
+}
+
+.room-card.list-view {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+}
+
+.room-card.list-view .room-card-top {
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.room-card.list-view .room-meta {
+  margin-left: 10px;
+}
+
+.room-card-main {
+  min-width: 0;
+}
+
+.room-card.list-view .room-host,
+.room-card.list-view .room-title {
+  margin-bottom: 0;
+}
+
+.room-card.list-view .room-actions {
+  margin: 0;
+}
+
+.room-card.list-view .room-enter {
+  justify-content: flex-end;
+  white-space: nowrap;
 }
 
 .room-card-top {
@@ -372,6 +450,15 @@
     flex-basis: auto;
   }
 
+  .rooms-toolbar-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .view-toggle {
+    width: max-content;
+  }
+
   .search-input {
     height: 46px;
   }
@@ -381,9 +468,30 @@
     gap: 12px;
   }
 
+  .room-grid.list-layout {
+    grid-template-columns: 1fr;
+  }
+
   .room-card.card {
     min-height: 136px;
     padding: 14px;
+  }
+
+  .room-card.list-view {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .room-card.list-view .room-card-top {
+    grid-row: span 2;
+  }
+
+  .room-card.list-view .room-meta {
+    margin-left: 8px;
+  }
+
+  .room-card.list-view .room-actions {
+    grid-column: 2;
   }
 
   .room-card-top {

@@ -18,7 +18,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Grid2X2,
   Hash,
+  List,
   Lock,
   Trash2
 } from 'lucide-react';
@@ -34,6 +36,7 @@ const Home = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [roomView, setRoomView] = useState('grid');
   const [loading, setLoading] = useState(true);
   const [guestId, setGuestId] = useState(() => {
     const saved = localStorage.getItem('guest_id');
@@ -356,6 +359,66 @@ const Home = () => {
     room.room_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const renderRoomCard = (room) => (
+    <motion.div
+      key={room.id}
+      whileHover={{ y: -2 }}
+      className={`glass card room-card ${roomView === 'list' ? 'list-view' : ''}`}
+      onClick={() => handleJoinRoom(room)}
+    >
+      <div className="room-card-top">
+        <div className="room-icon">
+          <Hash size={24} />
+        </div>
+        <div className="room-meta">
+          <button
+            type="button"
+            className="room-action-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleShareRoom(room);
+            }}
+            title="Share room link"
+          >
+            <Share2 size={15} />
+          </button>
+          {room.is_private && (
+            <div className="room-private-badge" title="Private room">
+              <Lock size={13} />
+            </div>
+          )}
+          <div className="room-count">
+            <Users size={16} /> {room.participant_count || 0}
+          </div>
+        </div>
+      </div>
+
+      <div className="room-card-main">
+        <h3 className="room-title">{room.room_name}</h3>
+        <p className="room-host">
+          Host: {room.host_name === user?.name ? 'You' : room.host_name}
+        </p>
+      </div>
+
+      {isRoomOwner(room) && (
+        <div className="room-actions" onClick={(e) => e.stopPropagation()}>
+          <button type="button" className="room-action-btn" onClick={() => openEditRoom(room)} title="Rename room">
+            <Pencil size={15} />
+          </button>
+          <button type="button" className="room-action-btn" onClick={() => openParticipants(room)} title="View participants">
+            <Users size={15} />
+          </button>
+          <button type="button" className="room-action-btn danger" onClick={() => setDeletingRoom(room)} title="Delete room">
+            <Trash2 size={15} />
+          </button>
+        </div>
+      )}
+      <div className="room-enter">
+        Enter Room <ArrowRight size={16} />
+      </div>
+    </motion.div>
+  );
+
   return (
     <div className="home-container">
       {/* Header */}
@@ -396,78 +459,44 @@ const Home = () => {
             {filteredRooms.length} {filteredRooms.length === 1 ? 'room' : 'rooms'}
           </span>
         </div>
-        <label className="search-container" aria-label="Search rooms">
-          <Search size={18} className="search-icon" />
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Search rooms"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </label>
+        <div className="rooms-toolbar-controls">
+          <div className="view-toggle" aria-label="Room view">
+            <button
+              type="button"
+              className={roomView === 'grid' ? 'active' : ''}
+              onClick={() => setRoomView('grid')}
+              title="Grid view"
+            >
+              <Grid2X2 size={17} />
+            </button>
+            <button
+              type="button"
+              className={roomView === 'list' ? 'active' : ''}
+              onClick={() => setRoomView('list')}
+              title="List view"
+            >
+              <List size={18} />
+            </button>
+          </div>
+          <label className="search-container" aria-label="Search rooms">
+            <Search size={18} className="search-icon" />
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search rooms"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </label>
+        </div>
       </div>
 
       {/* Room Grid */}
-      <div className="room-grid">
+      <div className={`room-grid ${roomView === 'list' ? 'list-layout' : ''}`}>
         {loading ? (
            [1,2,3,4,5,6,7,8].map(i => <div key={i} className="glass card room-card" style={{ height: '120px', opacity: 0.5 }}></div>)
         ) : filteredRooms.length > 0 ? (
-          filteredRooms.map((room) => (
-            <motion.div 
-              key={room.id}
-              whileHover={{ y: -2 }}
-              className="glass card room-card"
-              onClick={() => handleJoinRoom(room)}
-            >
-              <div className="room-card-top">
-                <div className="room-icon">
-                  <Hash size={24} />
-                </div>
-                <div className="room-meta">
-                  <button
-                    type="button"
-                    className="room-action-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleShareRoom(room);
-                    }}
-                    title="Share room link"
-                  >
-                    <Share2 size={15} />
-                  </button>
-                  {room.is_private && (
-                    <div className="room-private-badge" title="Private room">
-                      <Lock size={13} />
-                    </div>
-                  )}
-                  <div className="room-count">
-                    <Users size={16} /> {room.participant_count || 0}
-                  </div>
-                </div>
-              </div>
-              <h3 className="room-title">{room.room_name}</h3>
-              <p className="room-host">
-                Host: {room.host_name === user?.name ? 'You' : room.host_name}
-              </p>
-              {isRoomOwner(room) && (
-                <div className="room-actions" onClick={(e) => e.stopPropagation()}>
-                  <button type="button" className="room-action-btn" onClick={() => openEditRoom(room)} title="Rename room">
-                    <Pencil size={15} />
-                  </button>
-                  <button type="button" className="room-action-btn" onClick={() => openParticipants(room)} title="View participants">
-                    <Users size={15} />
-                  </button>
-                  <button type="button" className="room-action-btn danger" onClick={() => setDeletingRoom(room)} title="Delete room">
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              )}
-              <div className="room-enter">
-                Enter Room <ArrowRight size={16} />
-              </div>
-            </motion.div>
-          ))
+          filteredRooms.map(renderRoomCard)
         ) : (
           <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '100px 0', color: 'var(--text-dim)' }}>
             <MessageSquare size={48} style={{ marginBottom: '16px', opacity: 0.2 }} />
