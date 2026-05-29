@@ -28,6 +28,7 @@ const ChatRoom = () => {
   const navigate = useNavigate();
   const { user, token } = useAuth();
   const socket = useSocket();
+  const inviteToken = new URLSearchParams(window.location.search).get('invite') || '';
 
   const [messages, setMessages] = useState([]);
   const [participants, setParticipants] = useState([]);
@@ -317,6 +318,7 @@ const ChatRoom = () => {
       const joinRes = await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms/join`, {
         room_id: id,
         password: joinPassword || password,
+        invite_token: inviteToken,
         guest_name: guestName,
         guest_id: guestId
       }, { headers });

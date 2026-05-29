@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 export const JoinRoom = async (req, res) => {
     const client = await pool.connect();
     try {
-        const { room_id, password, guest_name, guest_id } = req.body;
+        const { room_id, password, guest_name, guest_id, invite_token } = req.body;
         
         if (!room_id) {
             return res.status(400).json({ message: "Room ID is required" });
@@ -83,7 +83,8 @@ export const JoinRoom = async (req, res) => {
 
         // 4. Room Privacy Check for NEW entries
         if (room.is_private && room.room_password) {
-            if (password !== room.room_password) {
+            const hasValidInvite = invite_token && room.invite_token && invite_token === room.invite_token;
+            if (!hasValidInvite && password !== room.room_password) {
                 await client.query('ROLLBACK');
                 return res.status(401).json({ message: "Incorrect room password", is_private: true });
             }

@@ -174,10 +174,20 @@ const Home = () => {
     }
   };
 
-  const getRoomUrl = (roomId) => `${window.location.origin}/room/${roomId}`;
+  const getRoomUrl = (room) => {
+    const roomId = typeof room === 'object' ? room.id : room;
+    const inviteToken = typeof room === 'object' ? room.invite_token : null;
+    const roomUrl = new URL(`/room/${roomId}`, window.location.origin);
 
-  const handleCopyRoomUrl = async (roomId) => {
-    const roomUrl = getRoomUrl(roomId);
+    if (inviteToken) {
+      roomUrl.searchParams.set('invite', inviteToken);
+    }
+
+    return roomUrl.toString();
+  };
+
+  const handleCopyRoomUrl = async (room) => {
+    const roomUrl = getRoomUrl(room);
 
     try {
       await navigator.clipboard.writeText(roomUrl);
@@ -195,7 +205,7 @@ const Home = () => {
   };
 
   const handleShareRoom = async (room) => {
-    const roomUrl = getRoomUrl(room.id);
+    const roomUrl = getRoomUrl(room);
 
     if (navigator.share) {
       try {
@@ -210,7 +220,7 @@ const Home = () => {
       }
     }
 
-    await handleCopyRoomUrl(room.id);
+    await handleCopyRoomUrl(room);
   };
 
   const handleGuestSubmit = (e) => {
@@ -555,11 +565,11 @@ const Home = () => {
             </div>
 
             <div className="room-url-box">
-              <span>{getRoomUrl(createdRoom.id)}</span>
+              <span>{getRoomUrl(createdRoom)}</span>
               <button
                 type="button"
                 className="btn-icon"
-                onClick={() => handleCopyRoomUrl(createdRoom.id)}
+                onClick={() => handleCopyRoomUrl(createdRoom)}
                 title="Copy room URL"
               >
                 {copiedRoomUrl ? <Check size={18} /> : <Copy size={18} />}

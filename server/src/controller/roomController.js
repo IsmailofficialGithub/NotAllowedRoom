@@ -31,10 +31,11 @@ export const CreateRoom = async (req, res) => {
         activeRoomCreations.add(creationKey);
 
         const now = new Date().toISOString();
+        const inviteToken = is_private ? uuidv4() : null;
 
         const result = await pool.query(
-            "INSERT INTO rooms (host_id, host_temporary_id, host_name, room_name, created_at, updated_at, is_active, is_deleted, is_private, room_password) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *",
-            [userId, hTemporaryId, hName, room_name, now, now, true, false, is_private || false, room_password || null]
+            "INSERT INTO rooms (host_id, host_temporary_id, host_name, room_name, created_at, updated_at, is_active, is_deleted, is_private, room_password, invite_token) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *",
+            [userId, hTemporaryId, hName, room_name, now, now, true, false, is_private || false, room_password || null, inviteToken]
         );
 
         const roomData = {
