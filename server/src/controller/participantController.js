@@ -207,13 +207,29 @@ export const RemoveParticipant = async (req, res) => {
                 [room_id]
             );
 
-            req.io.to(`room_${parseInt(room_id)}`).emit('participant_removed', {
+            const roomName = `room_${parseInt(room_id)}`;
+            const removalPayload = {
                 room_id: parseInt(room_id),
                 participant_id: participant.id,
                 user_id: participant.user_id,
                 guest_id: participant.user_tempeorary_id,
                 message: "Admin removed you from the room"
-            });
+            };
+
+            req.io.to(roomName).emit('participant_removed', removalPayload);
+
+            for (const socket of req.io.sockets.sockets.values()) {
+                const socketUserId = socket.data.user?.id ? Number(socket.data.user.id) : null;
+                const socketGuestId = socket.data.guest_id ? String(socket.data.guest_id) : null;
+                const removedUserId = participant.user_id ? Number(participant.user_id) : null;
+                const removedGuestId = participant.user_tempeorary_id ? String(participant.user_tempeorary_id) : null;
+                const isRemovedSocket = (removedUserId && socketUserId === removedUserId) ||
+                    (removedGuestId && socketGuestId === removedGuestId);
+
+                if (isRemovedSocket && !socket.rooms.has(roomName)) {
+                    socket.emit('participant_removed', removalPayload);
+                }
+            }
 
             req.io.emit('participant_count_updated', {
                 room_id: parseInt(room_id),
