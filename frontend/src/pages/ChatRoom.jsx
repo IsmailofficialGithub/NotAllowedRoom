@@ -63,12 +63,47 @@ const ChatRoom = () => {
   const roomFetchLockRef = useRef(false);
   const sendMessageLockRef = useRef(false);
   const deleteMessagesLockRef = useRef(false);
+  const deletedRoomRedirectRef = useRef(null);
 
 
   // Update ref whenever they change
   useEffect(() => {
     currentRoomInfo.current = { id, guestId };
   }, [id, guestId]);
+
+  useEffect(() => {
+    if (!socket || !id) return;
+
+    const onRoomDeleted = (deletedRoom) => {
+      const deletedRoomId = typeof deletedRoom === 'object' ? deletedRoom.room_id : deletedRoom;
+      if (Number(deletedRoomId) !== Number(id)) return;
+
+      setIsInCall(false);
+      setCallType(null);
+      setActiveCall(null);
+      setNotification({
+        message: deletedRoom?.message || 'Admin removed the room',
+        type: 'removed'
+      });
+
+      if (deletedRoomRedirectRef.current) {
+        window.clearTimeout(deletedRoomRedirectRef.current);
+      }
+
+      deletedRoomRedirectRef.current = window.setTimeout(() => {
+        navigate('/');
+      }, 1600);
+    };
+
+    socket.on('room_deleted', onRoomDeleted);
+
+    return () => {
+      socket.off('room_deleted', onRoomDeleted);
+      if (deletedRoomRedirectRef.current) {
+        window.clearTimeout(deletedRoomRedirectRef.current);
+      }
+    };
+  }, [socket, id, navigate]);
 
   // 1. Cleanup for UNMOUNT and NAVIGATION (Back button, etc)
   useEffect(() => {

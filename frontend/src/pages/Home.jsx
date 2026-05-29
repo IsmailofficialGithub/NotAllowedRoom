@@ -85,8 +85,9 @@ const Home = () => {
         });
       });
 
-      socket.on('room_deleted', (deletedId) => {
-        setRooms(prev => prev.filter(r => r.id !== parseInt(deletedId)));
+      socket.on('room_deleted', (deletedRoom) => {
+        const deletedRoomId = typeof deletedRoom === 'object' ? deletedRoom.room_id : deletedRoom;
+        setRooms(prev => prev.filter(r => r.id !== parseInt(deletedRoomId)));
       });
 
       socket.on('participant_count_updated', (data) => {

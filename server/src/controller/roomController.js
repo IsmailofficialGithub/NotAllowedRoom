@@ -151,7 +151,10 @@ export const DeleteRoom = async (req, res) => {
 
         // Realtime broadcast for deletion
         if (req.io) {
-            req.io.emit('room_deleted', id);
+            req.io.emit('room_deleted', {
+                room_id: parseInt(id),
+                message: "Admin removed the room"
+            });
         }
 
         res.status(200).json({
