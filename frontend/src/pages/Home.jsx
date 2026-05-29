@@ -8,13 +8,18 @@ import {
   Plus, 
   Users, 
   LogOut, 
+  LoaderCircle,
   MessageSquare, 
+  Pencil,
   Search, 
   ArrowRight,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Hash,
-  Lock
+  Lock,
+  Trash2
 } from 'lucide-react';
 
 import { useSocket } from '../context/SocketContext';
@@ -39,6 +44,15 @@ const Home = () => {
   const [showGuestPrompt, setShowGuestPrompt] = useState(false);
   const [createdRoom, setCreatedRoom] = useState(null);
   const [copiedRoomUrl, setCopiedRoomUrl] = useState(false);
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [createRoomError, setCreateRoomError] = useState('');
+  const [editingRoom, setEditingRoom] = useState(null);
+  const [editingRoomName, setEditingRoomName] = useState('');
+  const [isUpdatingRoom, setIsUpdatingRoom] = useState(false);
+  const [deletingRoom, setDeletingRoom] = useState(null);
+  const [participantsModal, setParticipantsModal] = useState(null);
+  const [participantsLoading, setParticipantsLoading] = useState(false);
+  const [participantsError, setParticipantsError] = useState('');
 
   const { user, logout, token } = useAuth();
   const navigate = useNavigate();
@@ -105,6 +119,7 @@ const Home = () => {
 
   const handleCreateRoom = async (e) => {
     if (e) e.preventDefault();
+    if (isCreatingRoom) return;
     
     if (!token && !guestName.trim()) {
       setShowGuestPrompt(true);
@@ -113,6 +128,8 @@ const Home = () => {
     }
 
     try {
+      setIsCreatingRoom(true);
+      setCreateRoomError('');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const response = await axios.post(`${API_URL}/create`, 
         { 
@@ -138,7 +155,10 @@ const Home = () => {
       setCreatedRoom(response.data.room);
       setCopiedRoomUrl(false);
     } catch (error) {
+      setCreateRoomError(error.response?.data?.message || 'Could not create room. Please try again.');
       console.error('Error creating room:', error);
+    } finally {
+      setIsCreatingRoom(false);
     }
   };
 
@@ -173,6 +193,83 @@ const Home = () => {
 
   const handleJoinRoom = (roomId) => {
     navigate(`/room/${roomId}`);
+  };
+
+  const isRoomOwner = (room) => {
+    if (token && user?.id && Number(room.host_id) === Number(user.id)) return true;
+    return !room.host_id && guestId && room.host_temporary_id === guestId;
+  };
+
+  const getHeaders = () => token ? { Authorization: `Bearer ${token}` } : {};
+
+  const openEditRoom = (room) => {
+    setEditingRoom(room);
+    setEditingRoomName(room.room_name);
+  };
+
+  const handleUpdateRoom = async (e) => {
+    e.preventDefault();
+    if (!editingRoom || isUpdatingRoom) return;
+
+    try {
+      setIsUpdatingRoom(true);
+      const response = await axios.patch(`${API_URL}/${editingRoom.id}`, {
+        room_name: editingRoomName,
+        guest_id: guestId
+      }, { headers: getHeaders() });
+
+      setRooms(prev => prev.map(room => (
+        Number(room.id) === Number(editingRoom.id)
+          ? { ...room, room_name: response.data.room.room_name }
+          : room
+      )));
+      setEditingRoom(null);
+    } catch (error) {
+      console.error('Error updating room:', error);
+    } finally {
+      setIsUpdatingRoom(false);
+    }
+  };
+
+  const handleDeleteRoom = async () => {
+    if (!deletingRoom) return;
+
+    try {
+      await axios.delete(`${API_URL}/${deletingRoom.id}`, {
+        headers: getHeaders(),
+        data: { guest_id: guestId }
+      });
+      setRooms(prev => prev.filter(room => Number(room.id) !== Number(deletingRoom.id)));
+      setDeletingRoom(null);
+    } catch (error) {
+      console.error('Error deleting room:', error);
+    }
+  };
+
+  const openParticipants = async (room, page = 1) => {
+    setParticipantsModal(prev => ({
+      room,
+      data: prev?.room?.id === room.id ? prev.data : [],
+      pagination: prev?.room?.id === room.id ? prev.pagination : null
+    }));
+    setParticipantsLoading(true);
+    setParticipantsError('');
+
+    try {
+      const response = await axios.get(`${API_URL}/${room.id}/participants?page=${page}&limit=6`, {
+        headers: getHeaders()
+      });
+      setParticipantsModal({
+        room,
+        data: response.data.data,
+        pagination: response.data.pagination
+      });
+    } catch (error) {
+      setParticipantsError('Could not load participants.');
+      console.error('Error loading participants:', error);
+    } finally {
+      setParticipantsLoading(false);
+    }
   };
 
   const filteredRooms = rooms.filter(room => 
@@ -262,6 +359,19 @@ const Home = () => {
               <p className="room-host">
                 Host: {room.host_name === user?.name ? 'You' : room.host_name}
               </p>
+              {isRoomOwner(room) && (
+                <div className="room-actions" onClick={(e) => e.stopPropagation()}>
+                  <button type="button" className="room-action-btn" onClick={() => openEditRoom(room)} title="Rename room">
+                    <Pencil size={15} />
+                  </button>
+                  <button type="button" className="room-action-btn" onClick={() => openParticipants(room)} title="View participants">
+                    <Users size={15} />
+                  </button>
+                  <button type="button" className="room-action-btn danger" onClick={() => setDeletingRoom(room)} title="Delete room">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              )}
               <div className="room-enter">
                 Enter Room <ArrowRight size={16} />
               </div>
@@ -293,6 +403,7 @@ const Home = () => {
                   placeholder="e.g. Design Sync"
                   value={newRoomName}
                   onChange={(e) => setNewRoomName(e.target.value)}
+                  disabled={isCreatingRoom}
                   required
                 />
               </div>
@@ -303,6 +414,7 @@ const Home = () => {
                   id="isPrivate" 
                   checked={isPrivate}
                   onChange={(e) => setIsPrivate(e.target.checked)}
+                  disabled={isCreatingRoom}
                 />
                 <label htmlFor="isPrivate" style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}>Private Room</label>
               </div>
@@ -315,16 +427,28 @@ const Home = () => {
                     placeholder="Optional access password"
                     value={roomPassword}
                     onChange={(e) => setRoomPassword(e.target.value)}
+                    disabled={isCreatingRoom}
                   />
                 </div>
               )}
 
+              {createRoomError && (
+                <p className="modal-error">{createRoomError}</p>
+              )}
+
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                <button type="button" onClick={() => setShowCreateModal(false)} className="btn btn-secondary" style={{ flex: 1 }}>
+                <button type="button" onClick={() => setShowCreateModal(false)} className="btn btn-secondary" style={{ flex: 1 }} disabled={isCreatingRoom}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                  Create
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={isCreatingRoom}>
+                  {isCreatingRoom ? (
+                    <>
+                      <LoaderCircle size={18} className="spin-icon" />
+                      Creating
+                    </>
+                  ) : (
+                    'Create'
+                  )}
                 </button>
               </div>
             </form>
@@ -375,6 +499,110 @@ const Home = () => {
                 className="btn btn-primary"
               >
                 Enter Room <ArrowRight size={16} />
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {editingRoom && (
+        <div className="modal-overlay">
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass card modal-content">
+            <h2 style={{ marginBottom: '20px' }}>Rename Room</h2>
+            <form onSubmit={handleUpdateRoom}>
+              <div className="input-group">
+                <label>Room Name</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={editingRoomName}
+                  onChange={(e) => setEditingRoomName(e.target.value)}
+                  disabled={isUpdatingRoom}
+                  required
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setEditingRoom(null)} disabled={isUpdatingRoom}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={isUpdatingRoom}>
+                  {isUpdatingRoom ? <><LoaderCircle size={18} className="spin-icon" /> Saving</> : 'Save'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {deletingRoom && (
+        <div className="modal-overlay">
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass card modal-content">
+            <h2 style={{ marginBottom: '10px' }}>Delete Room</h2>
+            <p className="modal-copy">This will remove "{deletingRoom.room_name}" from the room list.</p>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setDeletingRoom(null)}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-danger" onClick={handleDeleteRoom}>
+                Delete
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {participantsModal && (
+        <div className="modal-overlay">
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass card modal-content participants-modal">
+            <div className="participants-header">
+              <div>
+                <h2>{participantsModal.room.room_name}</h2>
+                <p>{participantsModal.pagination?.total || 0} active participants</p>
+              </div>
+              <button type="button" className="btn-icon" onClick={() => setParticipantsModal(null)}>×</button>
+            </div>
+
+            {participantsLoading ? (
+              <div className="participants-loading"><LoaderCircle size={20} className="spin-icon" /> Loading</div>
+            ) : participantsError ? (
+              <p className="modal-error">{participantsError}</p>
+            ) : participantsModal.data.length > 0 ? (
+              <div className="participants-list">
+                {participantsModal.data.map((participant) => (
+                  <div className="participant-row" key={participant.id}>
+                    <div className="participant-avatar">
+                      {(participant.user_name || participant.name || 'G').slice(0, 1).toUpperCase()}
+                    </div>
+                    <div>
+                      <strong>{participant.user_name || participant.name || 'Guest'}</strong>
+                      <span>{participant.email || 'Guest user'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="modal-copy">No one is active in this room yet.</p>
+            )}
+
+            <div className="pagination-row">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={participantsLoading || (participantsModal.pagination?.page || 1) <= 1}
+                onClick={() => openParticipants(participantsModal.room, participantsModal.pagination.page - 1)}
+              >
+                <ChevronLeft size={16} /> Prev
+              </button>
+              <span>
+                Page {participantsModal.pagination?.page || 1} of {participantsModal.pagination?.totalPages || 1}
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={participantsLoading || (participantsModal.pagination?.page || 1) >= (participantsModal.pagination?.totalPages || 1)}
+                onClick={() => openParticipants(participantsModal.room, participantsModal.pagination.page + 1)}
+              >
+                Next <ChevronRight size={16} />
               </button>
             </div>
           </motion.div>

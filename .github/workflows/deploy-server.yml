@@ -108,13 +108,18 @@ jobs:
 
             pm2 reload notallowedroom-server --update-env
 
-            APP_PORT="$(grep -E '^PORT=' .env | tail -n 1 | cut -d '=' -f 2)"
-            APP_PORT="${APP_PORT:-9000}"
+            PM2_PORT="$(node -e "const apps=JSON.parse(require('child_process').execSync('pm2 jlist',{encoding:'utf8'})); const app=apps.find(a=>a.name==='notallowedroom-server'); console.log(app?.pm2_env?.PORT || '')" 2>/dev/null || true)"
+            ENV_PORT="$(grep -E '^PORT=' .env 2>/dev/null | tail -n 1 | cut -d '=' -f 2 || true)"
+            PARENT_ENV_PORT="$(grep -E '^PORT=' ../.env 2>/dev/null | tail -n 1 | cut -d '=' -f 2 || true)"
+            HEALTH_PORTS="$(printf "%s\n%s\n%s\n3000\n9000" "$PM2_PORT" "$ENV_PORT" "$PARENT_ENV_PORT" | awk 'NF && !seen[$0]++')"
 
             for i in $(seq 1 30); do
-              if curl -fsS "http://127.0.0.1:${APP_PORT}/health"; then
-                exit 0
-              fi
+              for APP_PORT in $HEALTH_PORTS; do
+                echo "Checking health on port ${APP_PORT}"
+                if curl -fsS "http://127.0.0.1:${APP_PORT}/health"; then
+                  exit 0
+                fi
+              done
               sleep 2
             done
 

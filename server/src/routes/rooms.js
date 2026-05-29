@@ -1,5 +1,5 @@
 import express from 'express';
-import { CreateRoom, GetRooms, DeleteRoom } from '../controller/roomController.js';
+import { CreateRoom, GetRooms, UpdateRoom, DeleteRoom } from '../controller/roomController.js';
 import { JoinRoom, LeaveRoom, GetParticipants } from '../controller/participantController.js';
 import { SendMessage, GetMessages } from '../controller/messageController.js';
 import { protect, optionalProtect } from '../middleware/authMiddleware.js';
@@ -9,6 +9,7 @@ const router = express.Router();
 // Room Management
 router.post('/create', optionalProtect, CreateRoom);
 router.get('/', optionalProtect, GetRooms);
+router.patch('/:id', optionalProtect, UpdateRoom);
 router.delete('/:id', optionalProtect, DeleteRoom);
 
 // Participants

@@ -129,14 +129,37 @@ export const JoinRoom = async (req, res) => {
 export const GetParticipants = async (req, res) => {
     try {
         const { room_id } = req.params;
-        const result = await pool.query(
-            "SELECT p.*, u.name as user_name FROM participants p LEFT JOIN user_profile u ON p.user_id = u.id WHERE p.room_id = $1 AND p.is_removed = false",
-            [room_id]
-        );
+        const page = Math.max(parseInt(req.query.page || '1', 10), 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit || '8', 10), 1), 50);
+        const offset = (page - 1) * limit;
+
+        const [result, countResult] = await Promise.all([
+            pool.query(
+                `SELECT p.id, p.user_id, p.user_tempeorary_id, p.name, p.email, p.created_at, u.name as user_name
+                 FROM participants p
+                 LEFT JOIN user_profile u ON p.user_id = u.id
+                 WHERE p.room_id = $1 AND p.is_removed = false
+                 ORDER BY p.created_at DESC
+                 LIMIT $2 OFFSET $3`,
+                [room_id, limit, offset]
+            ),
+            pool.query(
+                "SELECT COUNT(*) FROM participants WHERE room_id = $1 AND is_removed = false",
+                [room_id]
+            )
+        ]);
+
+        const total = parseInt(countResult.rows[0].count, 10);
 
         res.status(200).json({
             success: true,
-            data: result.rows
+            data: result.rows,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.max(Math.ceil(total / limit), 1)
+            }
         });
     } catch (error) {
         console.error(error);
