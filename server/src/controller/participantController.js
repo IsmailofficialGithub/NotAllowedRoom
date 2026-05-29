@@ -39,6 +39,17 @@ export const JoinRoom = async (req, res) => {
             return res.status(400).json({ message: "Name is required for guest access" });
         }
 
+        const isRoomOwner = (userId && room.host_id === userId) ||
+            (pGuestId && room.host_temporary_id && String(room.host_temporary_id) === String(pGuestId));
+
+        if (room.is_private && room.room_password && !isRoomOwner) {
+            const hasValidInvite = invite_token && room.invite_token && invite_token === room.invite_token;
+            if (!hasValidInvite && password !== room.room_password) {
+                await client.query('ROLLBACK');
+                return res.status(401).json({ message: "Incorrect room password", is_private: true });
+            }
+        }
+
         // 3. Search for ANY existing entry for this user/guest in this room (even removed ones)
         console.log(`🔍 [JoinRoom] Searching existing: room=${roomIdInt}, user=${userId}, guest=${pGuestId}`);
         
@@ -79,15 +90,6 @@ export const JoinRoom = async (req, res) => {
                 guest_id: pGuestId,
                 name: pName
             });
-        }
-
-        // 4. Room Privacy Check for NEW entries
-        if (room.is_private && room.room_password) {
-            const hasValidInvite = invite_token && room.invite_token && invite_token === room.invite_token;
-            if (!hasValidInvite && password !== room.room_password) {
-                await client.query('ROLLBACK');
-                return res.status(401).json({ message: "Incorrect room password", is_private: true });
-            }
         }
 
         // 5. Insert New Entry
