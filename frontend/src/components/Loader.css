@@ -1,8 +1,8 @@
 /* ===========================
-   NAR Loader – Lightning bolt split animation
+   NarLoader — bolt animation
    =========================== */
 
-/* ---- Full-page / parent overlay ---- */
+/* ---- Overlay wrappers ---- */
 .nar-loader-overlay {
   position: absolute;
   inset: 0;
@@ -12,76 +12,92 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 22px;
+  gap: 20px;
 }
 
 .nar-loader-overlay.fullscreen {
   position: fixed;
+  z-index: 9990;
 }
 
 /* ---- Bolt container ---- */
 .nar-bolt {
   position: relative;
-  width: 80px;
-  height: 76px;          /* matches 48×46 ratio */
-  animation: nar-bolt-spin 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  width: 72px;
+  height: 69px;         /* 72 × (46/48) */
   flex-shrink: 0;
+  animation: nar-spin 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 .nar-bolt-sm {
-  width: 22px;
-  height: 21px;
+  width: 28px;
+  height: 27px;
 }
 
-/* ---- Each half stacked absolutely ---- */
+/* ---- Each half: absolutely stacked ---- */
 .nar-bolt-half {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
 }
 
-/* Top half enters from above, exits to above */
-.nar-bolt-half.top {
-  animation: nar-half-top 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-/* Bottom half enters from below, exits to below */
-.nar-bolt-half.bottom {
-  animation: nar-half-bottom 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+.nar-bolt-half img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 0 10px rgba(139, 60, 247, 0.7));
+  user-select: none;
+  pointer-events: none;
 }
 
 /*
-  Animation timeline (2.2 s loop):
-    0 %  –  8 %   →  halves off-screen (top ↑, bottom ↓), opacity 0
-    8 %  – 32 %   →  halves slide in to centre  ← fly-in
-   32 %  – 52 %   →  held together (full bolt visible, no spin yet)
-   52 %  – 72 %   →  bolt rotates 180°  (spin keyframe)
-   72 %  – 86 %   →  held at 180°
-   86 %  – 96 %   →  halves slide out  ← fly-out
-   96 %  – 100%   →  gap before next cycle
+  CSS clip-path is applied at element level → it moves WITH translateY.
+  Top half shows the upper 50%, bottom half shows the lower 50%.
 */
+.nar-bolt-half.top img {
+  clip-path: inset(0 0 50% 0);
+}
+.nar-bolt-half.bottom img {
+  clip-path: inset(50% 0 0 0);
+}
+
+/* ---- Slide animations ---- */
+/*
+  Timeline (2.4 s):
+  0–7%    off-screen (top ↑, bottom ↓), opacity 0
+  7–32%   fly in to y=0
+  32–72%  held (full bolt visible → spin handles rotation here)
+  72–88%  fly out (top ↑, bottom ↓)
+  88–100% gap
+*/
+.nar-bolt-half.top {
+  animation: nar-half-top 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.nar-bolt-half.bottom {
+  animation: nar-half-bottom 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
 
 @keyframes nar-half-top {
-  0%,   8%  { transform: translateY(-90px); opacity: 0;   }
-  32%        { transform: translateY(0);    opacity: 1;   }
-  86%        { transform: translateY(0);    opacity: 1;   }
-  96%, 100%  { transform: translateY(-90px); opacity: 0; }
+  0%,  7%  { transform: translateY(-80px); opacity: 0; }
+  32%       { transform: translateY(0);    opacity: 1; }
+  72%       { transform: translateY(0);    opacity: 1; }
+  88%, 100% { transform: translateY(-80px); opacity: 0; }
 }
 
 @keyframes nar-half-bottom {
-  0%,   8%  { transform: translateY(90px);  opacity: 0;   }
-  32%        { transform: translateY(0);    opacity: 1;   }
-  86%        { transform: translateY(0);    opacity: 1;   }
-  96%, 100%  { transform: translateY(90px);  opacity: 0; }
+  0%,  7%  { transform: translateY(80px);  opacity: 0; }
+  32%       { transform: translateY(0);    opacity: 1; }
+  72%       { transform: translateY(0);    opacity: 1; }
+  88%, 100% { transform: translateY(80px);  opacity: 0; }
 }
 
-@keyframes nar-bolt-spin {
-  0%,  32%  { transform: rotate(0deg);   }
-  56%,  86% { transform: rotate(180deg); }
-  /* reset silently during fly-out gap */
-  100%      { transform: rotate(360deg); }
+/* Container spins while halves are joined (32–72%) */
+@keyframes nar-spin {
+  0%,  32% { transform: rotate(0deg);   }
+  55%, 72% { transform: rotate(180deg); }
+  88%, 100%{ transform: rotate(180deg); }
 }
 
 /* ---- Label ---- */
@@ -91,9 +107,10 @@
   font-weight: 600;
   color: var(--text-secondary);
   letter-spacing: 0.04em;
+  text-align: center;
 }
 
-/* ---- Small inline variant ---- */
+/* ---- Inline (sm) variant ---- */
 .nar-loader-inline {
   display: inline-flex;
   align-items: center;
@@ -101,28 +118,34 @@
   gap: 8px;
 }
 
-/* Small bolt halves travel less distance */
+.nar-loader-inline-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* Smaller travel distance for the sm bolt */
 .nar-bolt-sm .nar-bolt-half.top {
-  animation: nar-half-top-sm 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: nar-half-top-sm 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 .nar-bolt-sm .nar-bolt-half.bottom {
-  animation: nar-half-bottom-sm 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: nar-half-bottom-sm 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 @keyframes nar-half-top-sm {
-  0%,   8%  { transform: translateY(-28px); opacity: 0; }
-  32%        { transform: translateY(0);    opacity: 1; }
-  86%        { transform: translateY(0);    opacity: 1; }
-  96%, 100%  { transform: translateY(-28px); opacity: 0; }
+  0%,  7%  { transform: translateY(-32px); opacity: 0; }
+  32%       { transform: translateY(0);    opacity: 1; }
+  72%       { transform: translateY(0);    opacity: 1; }
+  88%, 100% { transform: translateY(-32px); opacity: 0; }
 }
 @keyframes nar-half-bottom-sm {
-  0%,   8%  { transform: translateY(28px);  opacity: 0; }
-  32%        { transform: translateY(0);    opacity: 1; }
-  86%        { transform: translateY(0);    opacity: 1; }
-  96%, 100%  { transform: translateY(28px);  opacity: 0; }
+  0%,  7%  { transform: translateY(32px);  opacity: 0; }
+  32%       { transform: translateY(0);    opacity: 1; }
+  72%       { transform: translateY(0);    opacity: 1; }
+  88%, 100% { transform: translateY(32px);  opacity: 0; }
 }
 
-/* ---- Section loader (participants panel) ---- */
+/* ---- Section loader (participants area etc.) ---- */
 .nar-loader-section {
   min-height: 160px;
   display: flex;

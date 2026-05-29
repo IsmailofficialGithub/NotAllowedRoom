@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import NarLoader from './Loader';
 import './SplashScreen.css';
 
-const PHASE_MESSAGES = [
+const ROTATING_MESSAGES = [
   'Connecting to rooms…',
   'Setting up your space…',
   'Almost there…',
@@ -13,38 +12,35 @@ const PHASE_MESSAGES = [
 ];
 
 /**
- * SplashScreen — shown once per session on app launch.
+ * SplashScreen — premium dark fullscreen splash.
  *
- * Phase timeline:
- *   0 – 3 s  : Bolt only (no text)
- *   3 – 5 s  : Bolt + static message "Getting things ready…"
- *   5 – 8 s  : Bolt + rotating messages (cycling every ~1 s)
- *   8 s      : Fade out and dismiss
- *
- * @param {function} onDone — called when the splash finishes
+ * Timeline:
+ *   0 – 3 s  : Bolt animation only
+ *   3 – 5 s  : Bolt + "Getting things ready…"
+ *   5 – 8 s  : Bolt + rotating messages (every ~1.1 s)
+ *   8 s      : Fade out → onDone()
  */
 const SplashScreen = ({ onDone }) => {
-  const [phase, setPhase] = useState(1);      // 1 | 2 | 3
-  const [msgIndex, setMsgIndex] = useState(0);
+  const [phase, setPhase]     = useState(1);
+  const [msgIdx, setMsgIdx]   = useState(0);
   const [visible, setVisible] = useState(true);
 
-  /* Phase transitions */
   useEffect(() => {
     const t1 = setTimeout(() => setPhase(2), 3000);
     const t2 = setTimeout(() => setPhase(3), 5000);
     const t3 = setTimeout(() => {
       setVisible(false);
-      setTimeout(onDone, 600); // wait for fade-out then unmount
+      setTimeout(onDone, 600);
     }, 8000);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [onDone]);
 
-  /* Rotate messages in phase 3 */
   useEffect(() => {
     if (phase !== 3) return;
-    const iv = setInterval(() => {
-      setMsgIndex(i => (i + 1) % PHASE_MESSAGES.length);
-    }, 1100);
+    const iv = setInterval(
+      () => setMsgIdx(i => (i + 1) % ROTATING_MESSAGES.length),
+      1100
+    );
     return () => clearInterval(iv);
   }, [phase]);
 
@@ -56,57 +52,78 @@ const SplashScreen = ({ onDone }) => {
           initial={{ opacity: 1 }}
           exit={{ opacity: 0, transition: { duration: 0.55, ease: 'easeInOut' } }}
         >
-          {/* Brand mark */}
-          <motion.div
-            className="splash-brand"
-            initial={{ opacity: 0, y: -18 }}
+          {/* Ambient radial glow */}
+          <div className="splash-glow" />
+
+          {/* Brand */}
+          <motion.p
+            className="splash-title"
+            initial={{ opacity: 0, y: -16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
+            transition={{ duration: 0.5, delay: 0.15 }}
           >
-            <img src="/favicon.svg" alt="NAR" className="splash-logo" />
-            <span className="splash-brand-name">NAR</span>
-          </motion.div>
+            NAR
+          </motion.p>
+          <motion.p
+            className="splash-subtitle"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.35 }}
+          >
+            Not Allowed Room
+          </motion.p>
 
-          {/* Bolt */}
+          {/* Bolt — two halves using CSS clip-path on the actual favicon img */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.7 }}
+            className="splash-bolt-wrap"
+            initial={{ opacity: 0, scale: 0.6 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.45, delay: 0.2, ease: 'backOut' }}
+            transition={{ duration: 0.5, delay: 0.2, ease: 'backOut' }}
           >
-            <NarLoader overlay={false} size="md" />
+            <div className="splash-bolt-half top">
+              <img src="/favicon.svg" alt="" draggable={false} />
+            </div>
+            <div className="splash-bolt-half bottom">
+              <img src="/favicon.svg" alt="" draggable={false} />
+            </div>
           </motion.div>
 
-          {/* Phase 1 — no label */}
+          {/* Phase message */}
+          <div className="splash-msg-wrap">
+            <AnimatePresence mode="wait">
+              {phase === 2 && (
+                <motion.p
+                  key="p2"
+                  className="splash-msg"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  Getting things ready…
+                </motion.p>
+              )}
+              {phase === 3 && (
+                <motion.p
+                  key={`p3-${msgIdx}`}
+                  className="splash-msg"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.28 }}
+                >
+                  {ROTATING_MESSAGES[msgIdx]}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
 
-          {/* Phase 2 — static label */}
-          <AnimatePresence mode="wait">
-            {phase === 2 && (
-              <motion.p
-                key="phase2"
-                className="splash-msg"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.35 }}
-              >
-                Getting things ready…
-              </motion.p>
-            )}
-
-            {/* Phase 3 — rotating messages */}
-            {phase === 3 && (
-              <motion.p
-                key={`phase3-${msgIndex}`}
-                className="splash-msg"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.3 }}
-              >
-                {PHASE_MESSAGES[msgIndex]}
-              </motion.p>
-            )}
-          </AnimatePresence>
+          {/* Bouncing dots */}
+          <div className="splash-dots">
+            <div className="splash-dot" />
+            <div className="splash-dot" />
+            <div className="splash-dot" />
+          </div>
 
           {/* Progress bar */}
           <div className="splash-progress-track">

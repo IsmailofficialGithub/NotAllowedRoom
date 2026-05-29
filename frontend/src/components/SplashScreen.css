@@ -1,69 +1,184 @@
 /* =========================================
-   SplashScreen — full-viewport overlay
+   SplashScreen — premium dark splash
    ========================================= */
 
 .splash-overlay {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: var(--bg-primary);
+  background: #0d0d16;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 28px;
+  gap: 0;
+  overflow: hidden;
 }
 
-/* Brand row at top */
-.splash-brand {
+/* Radial ambient glow behind the bolt */
+.splash-glow {
+  position: absolute;
+  width: 480px;
+  height: 480px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(139, 60, 247, 0.22) 0%,
+    rgba(88, 28, 220, 0.1) 40%,
+    transparent 70%
+  );
+  pointer-events: none;
+  animation: splash-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes splash-pulse {
+  0%,  100% { transform: scale(1);    opacity: 0.8; }
+  50%        { transform: scale(1.15); opacity: 1;   }
+}
+
+/* ---- Bolt halves ---- */
+.splash-bolt-wrap {
+  position: relative;
+  width: 140px;
+  height: 134px;    /* 140 × (46/48) ≈ 134 */
+  margin-bottom: 48px;
+}
+
+.splash-bolt-half {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.splash-bolt-half img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  /* Extra glow on the img itself */
+  filter: drop-shadow(0 0 18px rgba(168, 85, 247, 0.85))
+          drop-shadow(0 0 40px rgba(88, 28, 220, 0.5));
+}
+
+/* CSS clip-path — clips the image element itself, moves WITH translateY */
+.splash-bolt-half.top img {
+  clip-path: inset(0 0 50% 0);   /* show top half only */
+}
+.splash-bolt-half.bottom img {
+  clip-path: inset(50% 0 0 0);   /* show bottom half only */
+}
+
+/* ---- Animation keyframes ---- */
+
+/* Top half enters from above, bottom from below */
+.splash-bolt-half.top {
+  animation: sbh-top 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.splash-bolt-half.bottom {
+  animation: sbh-bottom 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* The whole container rotates when joined */
+.splash-bolt-wrap {
+  animation: sbolt-spin 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes sbh-top {
+  0%,  6%  { transform: translateY(-110px); opacity: 0; }
+  30%       { transform: translateY(0);     opacity: 1; }
+  74%       { transform: translateY(0);     opacity: 1; }
+  90%, 100% { transform: translateY(-110px); opacity: 0; }
+}
+
+@keyframes sbh-bottom {
+  0%,  6%  { transform: translateY(110px);  opacity: 0; }
+  30%       { transform: translateY(0);     opacity: 1; }
+  74%       { transform: translateY(0);     opacity: 1; }
+  90%, 100% { transform: translateY(110px);  opacity: 0; }
+}
+
+@keyframes sbolt-spin {
+  0%,  30% { transform: rotate(0deg);   }
+  55%, 74% { transform: rotate(180deg); }
+  90%,100% { transform: rotate(180deg); }
+}
+
+/* ---- Brand text ---- */
+.splash-title {
+  font-size: 3.6rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  margin: 0 0 10px;
+  background: linear-gradient(135deg, #e2d9ff 0%, #b06cff 40%, #60a5fa 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1;
+}
+
+.splash-subtitle {
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.35);
+  margin: 0 0 52px;
+}
+
+/* ---- Phase messages ---- */
+.splash-msg-wrap {
+  min-height: 28px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 8px;
+  justify-content: center;
+  margin-top: 8px;
 }
 
-.splash-logo {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--glass-border);
-  padding: 8px;
-  box-shadow: var(--glass-shadow);
-}
-
-.splash-brand-name {
-  font-size: 2.4rem;
-  font-weight: 900;
-  letter-spacing: -0.03em;
-  color: var(--text-primary);
-}
-
-/* Rotating / static message */
 .splash-msg {
   margin: 0;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.5);
   letter-spacing: 0.04em;
-  min-height: 1.4rem;         /* prevent layout shift when empty */
   text-align: center;
 }
 
-/* Progress bar */
+/* ---- Dots indicator ---- */
+.splash-dots {
+  display: flex;
+  gap: 6px;
+  margin-top: 40px;
+}
+
+.splash-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  animation: dot-bounce 1.4s ease-in-out infinite;
+}
+.splash-dot:nth-child(2) { animation-delay: 0.2s; }
+.splash-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dot-bounce {
+  0%, 80%, 100% { background: rgba(139, 60, 247, 0.35); transform: scale(1); }
+  40%            { background: #a855f7;                   transform: scale(1.5); }
+}
+
+/* ---- Bottom progress bar ---- */
 .splash-progress-track {
   position: absolute;
   bottom: 0;
   left: 0;
   width: 100%;
-  height: 3px;
-  background: var(--glass-border);
-  overflow: hidden;
+  height: 2px;
+  background: rgba(255,255,255,0.06);
 }
 
 .splash-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #a855f7, #3b82f6);
+  background: linear-gradient(90deg, #a855f7, #60a5fa);
   border-radius: 0 2px 2px 0;
-  box-shadow: 0 0 10px rgba(168, 85, 247, 0.6);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.8);
 }
