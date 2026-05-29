@@ -1,0 +1,69 @@
+/* =========================================
+   SplashScreen — full-viewport overlay
+   ========================================= */
+
+.splash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+}
+
+/* Brand row at top */
+.splash-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.splash-logo {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  padding: 8px;
+  box-shadow: var(--glass-shadow);
+}
+
+.splash-brand-name {
+  font-size: 2.4rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+/* Rotating / static message */
+.splash-msg {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  min-height: 1.4rem;         /* prevent layout shift when empty */
+  text-align: center;
+}
+
+/* Progress bar */
+.splash-progress-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--glass-border);
+  overflow: hidden;
+}
+
+.splash-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #a855f7, #3b82f6);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.6);
+}
