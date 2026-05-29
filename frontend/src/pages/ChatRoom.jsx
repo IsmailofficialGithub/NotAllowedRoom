@@ -19,6 +19,7 @@ import {
   CheckSquare
 } from 'lucide-react';
 import CallOverlay from '../components/CallOverlay';
+import DateTimeBadge from '../components/DateTimeBadge';
 import './ChatRoom.css';
 
 const ChatRoom = () => {
@@ -437,6 +438,7 @@ const ChatRoom = () => {
           </div>
         </div>
         <div className="header-right">
+          <DateTimeBadge compact />
           {activeCall && !isInCall && (
             <motion.button
               initial={{ scale: 0.9, opacity: 0 }}

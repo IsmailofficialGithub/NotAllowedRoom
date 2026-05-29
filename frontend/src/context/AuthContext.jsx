@@ -22,9 +22,13 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       const response = await axios.post(`${API_URL}/login`, { email, password });
-      const { sessionToken, userId, name } = response.data;
+      const { sessionToken, userId, name, email: responseEmail } = response.data;
       
-      const userData = { id: userId, name, email };
+      const userData = {
+        id: userId,
+        name: name || responseEmail || email,
+        email: responseEmail || email
+      };
       setToken(sessionToken);
       setUser(userData);
       

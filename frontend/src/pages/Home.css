@@ -93,6 +93,17 @@
     padding-top: 18px;
     gap: 14px;
   }
+
+  .home-header .date-time-badge {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .home-header .date-time-badge svg {
+    display: block;
+  }
   
   .home-header-actions {
     width: auto;
@@ -129,6 +140,10 @@
 }
 
 @media (max-width: 380px) {
+  .home-container {
+    padding: 14px 12px;
+  }
+
   .home-brand-logo {
     width: 34px;
     height: 34px;
@@ -145,6 +160,7 @@
 
 .home-header-actions {
   display: flex;
+  align-items: center;
   gap: 12px;
 }
 

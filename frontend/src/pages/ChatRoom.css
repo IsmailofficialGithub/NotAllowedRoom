@@ -44,6 +44,12 @@
   flex-shrink: 0;
 }
 
+@media (max-width: 520px) {
+  .chat-header .date-time-badge {
+    display: none;
+  }
+}
+
 .messages-area {
   flex: 1;
   overflow-y: auto;

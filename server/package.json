@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "dev:all": "concurrently -n server,frontend -c blue,green \"npm run dev\" \"npm --prefix ../frontend run dev -- --host 0.0.0.0\"",
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "migrate": "node src/db/migrate.js"
@@ -24,6 +25,7 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "nodemon": "^3.1.14"
   }
 }

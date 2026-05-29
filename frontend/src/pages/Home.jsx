@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 
 import { useSocket } from '../context/SocketContext';
+import DateTimeBadge from '../components/DateTimeBadge';
 import './Home.css';
 
 const Home = () => {
@@ -37,6 +38,7 @@ const Home = () => {
 
   const { user, logout, token } = useAuth();
   const navigate = useNavigate();
+  const displayName = user?.name || user?.email || 'there';
 
   const API_URL = `${import.meta.env.VITE_BACKEND_URL}/api/v1/rooms`;
 
@@ -158,11 +160,12 @@ const Home = () => {
               NAR
             </h1>
             <p>
-            {token ? `Welcome back, ${user?.name}` : 'Welcome, Explore public rooms'}
+            {token ? `Welcome back, ${displayName}` : 'Welcome, Explore public rooms'}
             </p>
           </div>
         </div>
         <div className="home-header-actions">
+          <DateTimeBadge />
           <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
             <Plus size={20} /> <span className="hide-mobile">Create Room</span>
           </button>
