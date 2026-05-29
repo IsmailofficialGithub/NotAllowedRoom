@@ -8,6 +8,7 @@ import { pool } from './config/postgress_db.js';
 // Routes
 import authRoutes from './routes/auth.js';
 import roomRoutes from './routes/rooms.js';
+import { startGuestRoomExpiryWatcher } from './services/guestRoomExpiry.js';
 
 // Socket Handlers
 import { registerSocketHandlers } from "./socket/socketHandlers.js";
@@ -90,4 +91,5 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 9000;
 server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+    startGuestRoomExpiryWatcher(io);
 });

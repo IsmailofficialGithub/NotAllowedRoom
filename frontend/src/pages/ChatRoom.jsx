@@ -127,12 +127,23 @@ const ChatRoom = () => {
       }, 1600);
     };
 
+    const onRoomExpiring = (data) => {
+      if (Number(data.room_id) !== Number(id)) return;
+
+      setNotification({
+        message: data.message || 'This guest room will close soon',
+        type: 'warning'
+      });
+    };
+
     socket.on('room_deleted', onRoomDeleted);
     socket.on('participant_removed', onParticipantRemoved);
+    socket.on('room_expiring', onRoomExpiring);
 
     return () => {
       socket.off('room_deleted', onRoomDeleted);
       socket.off('participant_removed', onParticipantRemoved);
+      socket.off('room_expiring', onRoomExpiring);
       if (deletedRoomRedirectRef.current) {
         window.clearTimeout(deletedRoomRedirectRef.current);
       }
