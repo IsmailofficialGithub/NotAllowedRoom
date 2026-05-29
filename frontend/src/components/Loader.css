@@ -1,7 +1,8 @@
 /* ===========================
-   NAR Loader – Lightning bolt animation
+   NAR Loader – Lightning bolt split animation
    =========================== */
 
+/* ---- Full-page / parent overlay ---- */
 .nar-loader-overlay {
   position: absolute;
   inset: 0;
@@ -11,7 +12,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: 22px;
 }
 
 .nar-loader-overlay.fullscreen {
@@ -21,90 +22,78 @@
 /* ---- Bolt container ---- */
 .nar-bolt {
   position: relative;
-  width: 72px;
-  height: 72px;
+  width: 80px;
+  height: 76px;          /* matches 48×46 ratio */
+  animation: nar-bolt-spin 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  flex-shrink: 0;
 }
 
-/* Each half is absolutely stacked on top of each other */
+.nar-bolt-sm {
+  width: 22px;
+  height: 21px;
+}
+
+/* ---- Each half stacked absolutely ---- */
 .nar-bolt-half {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
 }
 
-.nar-bolt-half svg {
-  width: 72px;
-  height: 72px;
-}
-
-/* The full wrapper rotates when both halves are joined */
-.nar-bolt {
-  animation: bolt-spin 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-/* Top half flies in from the top */
+/* Top half enters from above, exits to above */
 .nar-bolt-half.top {
-  animation: half-from-top 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: nar-half-top 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-/* Bottom half flies in from the bottom */
+/* Bottom half enters from below, exits to below */
 .nar-bolt-half.bottom {
-  animation: half-from-bottom 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: nar-half-bottom 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 /*
-  Timeline (2s loop):
-  0.00s  – 0.05s  : split (top at -100%, bottom at +100%), invisible
-  0.05s  – 0.40s  : halves fly in to centre
-  0.40s  – 0.70s  : held together (full bolt visible)
-  0.70s  – 1.05s  : bolt rotates 180° (spin keyframe handles this)
-  1.05s  – 1.35s  : held again
-  1.35s  – 1.70s  : halves fly out (reverse)
-  1.70s  – 2.00s  : gap before next loop
+  Animation timeline (2.2 s loop):
+    0 %  –  8 %   →  halves off-screen (top ↑, bottom ↓), opacity 0
+    8 %  – 32 %   →  halves slide in to centre  ← fly-in
+   32 %  – 52 %   →  held together (full bolt visible, no spin yet)
+   52 %  – 72 %   →  bolt rotates 180°  (spin keyframe)
+   72 %  – 86 %   →  held at 180°
+   86 %  – 96 %   →  halves slide out  ← fly-out
+   96 %  – 100%   →  gap before next cycle
 */
 
-@keyframes half-from-top {
-  0%                { transform: translateY(-80px); opacity: 0; }
-  5%                { transform: translateY(-80px); opacity: 0; }
-  30%               { transform: translateY(0);     opacity: 1; }
-  70%               { transform: translateY(0);     opacity: 1; }
-  88%               { transform: translateY(-80px); opacity: 0; }
-  100%              { transform: translateY(-80px); opacity: 0; }
+@keyframes nar-half-top {
+  0%,   8%  { transform: translateY(-90px); opacity: 0;   }
+  32%        { transform: translateY(0);    opacity: 1;   }
+  86%        { transform: translateY(0);    opacity: 1;   }
+  96%, 100%  { transform: translateY(-90px); opacity: 0; }
 }
 
-@keyframes half-from-bottom {
-  0%                { transform: translateY(80px);  opacity: 0; }
-  5%                { transform: translateY(80px);  opacity: 0; }
-  30%               { transform: translateY(0);     opacity: 1; }
-  70%               { transform: translateY(0);     opacity: 1; }
-  88%               { transform: translateY(80px);  opacity: 0; }
-  100%              { transform: translateY(80px);  opacity: 0; }
+@keyframes nar-half-bottom {
+  0%,   8%  { transform: translateY(90px);  opacity: 0;   }
+  32%        { transform: translateY(0);    opacity: 1;   }
+  86%        { transform: translateY(0);    opacity: 1;   }
+  96%, 100%  { transform: translateY(90px);  opacity: 0; }
 }
 
-@keyframes bolt-spin {
-  0%   { transform: rotate(0deg);   }
-  30%  { transform: rotate(0deg);   }
-  52%  { transform: rotate(180deg); }
-  68%  { transform: rotate(180deg); }
-  88%  { transform: rotate(180deg); }
-  100% { transform: rotate(360deg); } /* reset to 0 via 360 so next loop is seamless */
+@keyframes nar-bolt-spin {
+  0%,  32%  { transform: rotate(0deg);   }
+  56%,  86% { transform: rotate(180deg); }
+  /* reset silently during fly-out gap */
+  100%      { transform: rotate(360deg); }
 }
 
-/* Label */
+/* ---- Label ---- */
 .nar-loader-label {
+  margin: 0;
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--text-secondary);
   letter-spacing: 0.04em;
 }
 
-/* ---- Inline / sm variant ---- */
+/* ---- Small inline variant ---- */
 .nar-loader-inline {
   display: inline-flex;
   align-items: center;
@@ -112,38 +101,28 @@
   gap: 8px;
 }
 
-.nar-loader-inline .nar-bolt {
-  width: 22px;
-  height: 22px;
-  animation: bolt-spin 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+/* Small bolt halves travel less distance */
+.nar-bolt-sm .nar-bolt-half.top {
+  animation: nar-half-top-sm 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.nar-bolt-sm .nar-bolt-half.bottom {
+  animation: nar-half-bottom-sm 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-.nar-loader-inline .nar-bolt svg {
-  width: 22px;
-  height: 22px;
+@keyframes nar-half-top-sm {
+  0%,   8%  { transform: translateY(-28px); opacity: 0; }
+  32%        { transform: translateY(0);    opacity: 1; }
+  86%        { transform: translateY(0);    opacity: 1; }
+  96%, 100%  { transform: translateY(-28px); opacity: 0; }
+}
+@keyframes nar-half-bottom-sm {
+  0%,   8%  { transform: translateY(28px);  opacity: 0; }
+  32%        { transform: translateY(0);    opacity: 1; }
+  86%        { transform: translateY(0);    opacity: 1; }
+  96%, 100%  { transform: translateY(28px);  opacity: 0; }
 }
 
-.nar-loader-inline .nar-bolt-half.top {
-  animation: half-from-top-sm 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-.nar-loader-inline .nar-bolt-half.bottom {
-  animation: half-from-bottom-sm 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-@keyframes half-from-top-sm {
-  0%, 5%   { transform: translateY(-24px); opacity: 0; }
-  30%      { transform: translateY(0);     opacity: 1; }
-  70%      { transform: translateY(0);     opacity: 1; }
-  88%, 100%{ transform: translateY(-24px); opacity: 0; }
-}
-@keyframes half-from-bottom-sm {
-  0%, 5%   { transform: translateY(24px);  opacity: 0; }
-  30%      { transform: translateY(0);     opacity: 1; }
-  70%      { transform: translateY(0);     opacity: 1; }
-  88%, 100%{ transform: translateY(24px);  opacity: 0; }
-}
-
-/* Section loader (participants area) */
+/* ---- Section loader (participants panel) ---- */
 .nar-loader-section {
   min-height: 160px;
   display: flex;
