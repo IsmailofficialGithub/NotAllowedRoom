@@ -55,6 +55,7 @@ const Home = () => {
   const [participantsModal, setParticipantsModal] = useState(null);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [participantsError, setParticipantsError] = useState('');
+  const [removingParticipantId, setRemovingParticipantId] = useState(null);
   const createRoomLockRef = useRef(false);
   const updateRoomLockRef = useRef(false);
   const deleteRoomLockRef = useRef(false);
@@ -313,6 +314,32 @@ const Home = () => {
       participantsLockRef.current = false;
       setParticipantsLoading(false);
     }
+  };
+
+  const handleRemoveParticipant = async (participant) => {
+    if (!participantsModal || removingParticipantId) return;
+
+    try {
+      setRemovingParticipantId(participant.id);
+      await axios.delete(`${API_URL}/${participantsModal.room.id}/participants/${participant.id}`, {
+        headers: getHeaders(),
+        data: { guest_id: guestId }
+      });
+
+      const nextPage = participantsModal.pagination?.page || 1;
+      await openParticipants(participantsModal.room, nextPage);
+    } catch (error) {
+      if (isDuplicateRequest(error)) return;
+      setParticipantsError(error.response?.data?.message || 'Could not remove participant.');
+      console.error('Error removing participant:', error);
+    } finally {
+      setRemovingParticipantId(null);
+    }
+  };
+
+  const isCurrentParticipant = (participant) => {
+    if (token && user?.id && Number(participant.user_id) === Number(user.id)) return true;
+    return !participant.user_id && guestId && participant.user_tempeorary_id === guestId;
   };
 
   const filteredRooms = rooms.filter(room => 
@@ -631,6 +658,21 @@ const Home = () => {
                       <strong>{participant.user_name || participant.name || 'Guest'}</strong>
                       <span>{participant.email || 'Guest user'}</span>
                     </div>
+                    {!isCurrentParticipant(participant) && (
+                      <button
+                        type="button"
+                        className="participant-remove-btn"
+                        onClick={() => handleRemoveParticipant(participant)}
+                        disabled={removingParticipantId === participant.id}
+                        title="Remove from room"
+                      >
+                        {removingParticipantId === participant.id ? (
+                          <LoaderCircle size={15} className="spin-icon" />
+                        ) : (
+                          <Trash2 size={15} />
+                        )}
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

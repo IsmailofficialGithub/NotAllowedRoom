@@ -167,6 +167,70 @@ export const GetParticipants = async (req, res) => {
     }
 };
 
+export const RemoveParticipant = async (req, res) => {
+    try {
+        const { room_id, participant_id } = req.params;
+        const { guest_id } = req.body;
+        const userId = req.user?.id || null;
+        const guestId = guest_id || null;
+
+        const roomResult = await pool.query(
+            `SELECT id FROM rooms
+             WHERE id = $1 AND is_active = true AND is_deleted = false AND (
+                ($2::INT IS NOT NULL AND host_id = $2) OR
+                ($3::UUID IS NOT NULL AND host_temporary_id = $3)
+             )`,
+            [room_id, userId, guestId]
+        );
+
+        if (roomResult.rows.length === 0) {
+            return res.status(403).json({ message: "Only the room admin can remove users" });
+        }
+
+        const participantResult = await pool.query(
+            `UPDATE participants
+             SET is_removed = true, removed_at = $1, updated_at = NOW()
+             WHERE id = $2 AND room_id = $3 AND is_removed = false
+             RETURNING id, user_id, user_tempeorary_id, name`,
+            [new Date().toISOString(), participant_id, room_id]
+        );
+
+        if (participantResult.rowCount === 0) {
+            return res.status(404).json({ message: "Participant not found" });
+        }
+
+        const participant = participantResult.rows[0];
+
+        if (req.io) {
+            const countResult = await pool.query(
+                "SELECT COUNT(id) FROM participants WHERE room_id = $1 AND is_removed = false",
+                [room_id]
+            );
+
+            req.io.to(`room_${parseInt(room_id)}`).emit('participant_removed', {
+                room_id: parseInt(room_id),
+                participant_id: participant.id,
+                user_id: participant.user_id,
+                guest_id: participant.user_tempeorary_id,
+                message: "Admin removed you from the room"
+            });
+
+            req.io.emit('participant_count_updated', {
+                room_id: parseInt(room_id),
+                participant_count: parseInt(countResult.rows[0].count)
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Participant removed successfully"
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
 export const LeaveRoom = async (req, res) => {
     try {
         const { room_id, guest_id } = req.body;

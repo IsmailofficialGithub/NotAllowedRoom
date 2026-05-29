@@ -608,6 +608,11 @@
   min-width: 0;
 }
 
+.participant-row > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
 .participant-row strong,
 .participant-row span {
   display: block;
@@ -623,6 +628,31 @@
 .participant-row span {
   color: var(--text-dim);
   font-size: 0.78rem;
+}
+
+.participant-remove-btn {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--error);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.participant-remove-btn:hover {
+  border-color: var(--error);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.participant-remove-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .participants-loading {

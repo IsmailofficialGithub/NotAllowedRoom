@@ -217,6 +217,33 @@ const ChatRoom = () => {
       }));
     };
 
+    const onParticipantRemoved = (data) => {
+      if (Number(data.room_id) !== Number(id)) return;
+
+      const removedUserId = data.user_id ? String(data.user_id) : null;
+      const removedGuestId = data.guest_id ? String(data.guest_id) : null;
+      const currentUserId = user?.id ? String(user.id) : null;
+      const currentGuestId = guestId ? String(guestId) : null;
+      const removedCurrentUser = (removedUserId && currentUserId === removedUserId) ||
+        (removedGuestId && currentGuestId === removedGuestId);
+
+      setParticipants(prev => prev.filter(p => Number(p.id) !== Number(data.participant_id)));
+
+      if (!removedCurrentUser) return;
+
+      setIsInCall(false);
+      setCallType(null);
+      setActiveCall(null);
+      setNotification({
+        message: data.message || 'Admin removed you from the room',
+        type: 'removed'
+      });
+
+      window.setTimeout(() => {
+        navigate('/');
+      }, 1600);
+    };
+
     const playNotificationSound = () => {
       const audio = new Audio('/notification.mp3');
       audio.volume = 0.5;
@@ -252,6 +279,7 @@ const ChatRoom = () => {
     socket.on('messages_deleted', onMessagesDeleted);
     socket.on('participant_count_updated', onCountUpdate);
     socket.on('participant_left', onParticipantLeft);
+    socket.on('participant_removed', onParticipantRemoved);
     socket.on('user_joined_room', showJoinNotification);
     socket.on('call_in_progress', onCallInProgress);
     socket.on('call_ended', onCallEnded);
@@ -261,11 +289,12 @@ const ChatRoom = () => {
       socket.off('messages_deleted', onMessagesDeleted);
       socket.off('participant_count_updated', onCountUpdate);
       socket.off('participant_left', onParticipantLeft);
+      socket.off('participant_removed', onParticipantRemoved);
       socket.off('user_joined_room', showJoinNotification);
       socket.off('call_in_progress', onCallInProgress);
       socket.off('call_ended', onCallEnded);
     };
-  }, [socket, id, isSocketJoined, isInCall]);
+  }, [socket, id, isSocketJoined, isInCall, user, guestId, navigate]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

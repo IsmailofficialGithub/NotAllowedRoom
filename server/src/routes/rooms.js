@@ -1,6 +1,6 @@
 import express from 'express';
 import { CreateRoom, GetRooms, UpdateRoom, DeleteRoom } from '../controller/roomController.js';
-import { JoinRoom, LeaveRoom, GetParticipants } from '../controller/participantController.js';
+import { JoinRoom, LeaveRoom, GetParticipants, RemoveParticipant } from '../controller/participantController.js';
 import { SendMessage, GetMessages } from '../controller/messageController.js';
 import { protect, optionalProtect } from '../middleware/authMiddleware.js';
 
@@ -16,6 +16,7 @@ router.delete('/:id', optionalProtect, DeleteRoom);
 router.post('/join', optionalProtect, JoinRoom);
 router.post('/leave', optionalProtect, LeaveRoom);
 router.get('/:room_id/participants', optionalProtect, GetParticipants);
+router.delete('/:room_id/participants/:participant_id', optionalProtect, RemoveParticipant);
 
 // Messages
 router.post('/message', optionalProtect, SendMessage);
