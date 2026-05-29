@@ -48,6 +48,7 @@ const ChatRoom = () => {
   const [showGuestPrompt, setShowGuestPrompt] = useState(!token && !localStorage.getItem('guest_name'));
   const [password, setPassword] = useState('');
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [isCheckingRoomAccess, setIsCheckingRoomAccess] = useState(true);
   const [error, setError] = useState('');
   
   // Call States
@@ -321,6 +322,7 @@ const ChatRoom = () => {
     if (roomFetchLockRef.current === requestKey) return false;
 
     try {
+      setIsCheckingRoomAccess(true);
       roomFetchLockRef.current = requestKey;
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
@@ -353,9 +355,13 @@ const ChatRoom = () => {
       setParticipants(partRes.data.data);
       setShowPasswordPrompt(false);
       setError('');
+      setIsCheckingRoomAccess(false);
       return true;
     } catch (error) {
-      if (isDuplicateRequest(error)) return false;
+      if (isDuplicateRequest(error)) {
+        setIsCheckingRoomAccess(false);
+        return false;
+      }
       if (error.response?.status === 401) {
         setShowPasswordPrompt(true);
         if (joinPassword) setError('Invalid room password');
@@ -363,6 +369,7 @@ const ChatRoom = () => {
         setShowGuestPrompt(true);
       }
       console.error('Error fetching room data:', error);
+      setIsCheckingRoomAccess(false);
       return false;
     } finally {
       roomFetchLockRef.current = false;
@@ -497,6 +504,19 @@ const ChatRoom = () => {
               <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '12px' }}>Join Room</button>
               <button type="button" onClick={() => navigate('/')} className="btn-secondary btn" style={{ width: '100%', marginTop: '12px' }}>Go Back</button>
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      {isCheckingRoomAccess && !showGuestPrompt && !showPasswordPrompt && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 95, background: 'var(--bg-primary)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass card" style={{ width: '100%', maxWidth: '320px', textAlign: 'center' }}>
+            <h2 style={{ marginBottom: '8px' }}>Checking room access</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Please wait...</p>
           </motion.div>
         </div>
       )}
