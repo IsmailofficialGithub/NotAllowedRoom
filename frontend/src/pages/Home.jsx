@@ -12,6 +12,7 @@ import {
   MessageSquare, 
   Pencil,
   Search, 
+  Share2,
   ArrowRight,
   Check,
   ChevronLeft,
@@ -192,6 +193,25 @@ const Home = () => {
     window.setTimeout(() => setCopiedRoomUrl(false), 1800);
   };
 
+  const handleShareRoom = async (room) => {
+    const roomUrl = getRoomUrl(room.id);
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: room.room_name,
+          text: `Join "${room.room_name}" on NotAllowedRoom`,
+          url: roomUrl
+        });
+        return;
+      } catch (error) {
+        if (error.name === 'AbortError') return;
+      }
+    }
+
+    await handleCopyRoomUrl(room.id);
+  };
+
   const handleGuestSubmit = (e) => {
     e.preventDefault();
     if (guestName.trim()) {
@@ -368,6 +388,17 @@ const Home = () => {
                   <Hash size={24} />
                 </div>
                 <div className="room-meta">
+                  <button
+                    type="button"
+                    className="room-action-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleShareRoom(room);
+                    }}
+                    title="Share room link"
+                  >
+                    <Share2 size={15} />
+                  </button>
                   {room.is_private && (
                     <div className="room-private-badge">
                       <Lock size={12} /> <span>PRIVATE</span>
