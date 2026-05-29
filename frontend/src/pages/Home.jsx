@@ -11,6 +11,8 @@ import {
   MessageSquare, 
   Search, 
   ArrowRight,
+  Check,
+  Copy,
   Hash,
   Lock
 } from 'lucide-react';
@@ -35,6 +37,8 @@ const Home = () => {
   });
   const [guestName, setGuestName] = useState(localStorage.getItem('guest_name') || '');
   const [showGuestPrompt, setShowGuestPrompt] = useState(false);
+  const [createdRoom, setCreatedRoom] = useState(null);
+  const [copiedRoomUrl, setCopiedRoomUrl] = useState(false);
 
   const { user, logout, token } = useAuth();
   const navigate = useNavigate();
@@ -50,7 +54,7 @@ const Home = () => {
 
   useEffect(() => {
     fetchRooms();
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (socket) {
@@ -89,7 +93,8 @@ const Home = () => {
   const fetchRooms = async () => {
     try {
       const gId = guestId || localStorage.getItem('guest_id');
-      const response = await axios.get(`${API_URL}?guest_id=${gId}`);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const response = await axios.get(`${API_URL}?guest_id=${gId}`, { headers });
       setRooms(response.data.data);
     } catch (error) {
       console.error('Error fetching rooms:', error);
@@ -130,12 +135,31 @@ const Home = () => {
       setRoomPassword('');
       setIsPrivate(false);
       setShowCreateModal(false);
-      
-      // Navigate directly into the new room
-      navigate(`/room/${response.data.room.id}`);
+      setCreatedRoom(response.data.room);
+      setCopiedRoomUrl(false);
     } catch (error) {
       console.error('Error creating room:', error);
     }
+  };
+
+  const getRoomUrl = (roomId) => `${window.location.origin}/room/${roomId}`;
+
+  const handleCopyRoomUrl = async (roomId) => {
+    const roomUrl = getRoomUrl(roomId);
+
+    try {
+      await navigator.clipboard.writeText(roomUrl);
+    } catch (error) {
+      const input = document.createElement('input');
+      input.value = roomUrl;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+    }
+
+    setCopiedRoomUrl(true);
+    window.setTimeout(() => setCopiedRoomUrl(false), 1800);
   };
 
   const handleGuestSubmit = (e) => {
@@ -304,6 +328,55 @@ const Home = () => {
                 </button>
               </div>
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      {createdRoom && (
+        <div className="modal-overlay">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="glass card modal-content"
+          >
+            <div className="created-room-header">
+              <div className="room-icon">
+                {createdRoom.is_private ? <Lock size={22} /> : <Hash size={22} />}
+              </div>
+              <div>
+                <h2>{createdRoom.room_name}</h2>
+                <p>{createdRoom.is_private ? 'Private room created' : 'Room created'}</p>
+              </div>
+            </div>
+
+            <div className="room-url-box">
+              <span>{getRoomUrl(createdRoom.id)}</span>
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={() => handleCopyRoomUrl(createdRoom.id)}
+                title="Copy room URL"
+              >
+                {copiedRoomUrl ? <Check size={18} /> : <Copy size={18} />}
+              </button>
+            </div>
+
+            <div className="created-room-actions">
+              <button
+                type="button"
+                onClick={() => setCreatedRoom(null)}
+                className="btn btn-secondary"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/room/${createdRoom.id}`)}
+                className="btn btn-primary"
+              >
+                Enter Room <ArrowRight size={16} />
+              </button>
+            </div>
           </motion.div>
         </div>
       )}

@@ -439,6 +439,56 @@
   max-width: 400px;
 }
 
+.created-room-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.created-room-header h2 {
+  margin: 0 0 4px;
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+
+.created-room-header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+}
+
+.room-url-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.room-url-box span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.created-room-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.created-room-actions .btn {
+  flex: 1;
+}
+
 .hide-mobile {
   display: inline;
 }
