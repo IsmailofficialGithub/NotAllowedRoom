@@ -2,13 +2,15 @@ import React, { useId } from 'react';
 import './Loader.css';
 
 /**
- * NarLoader — Two bolt halves slide in from both sides, meet, then rotate 180°.
+ * NarLoader — Lightning bolt animation.
+ * The top half drops in from above, the bottom half rises from below.
+ * They join to form the full bolt, which then rotates 180°, then splits apart.
  *
  * Props:
- *  - overlay    : boolean — wrap in a full-overlay (absolute, covers parent). default true.
- *  - fullscreen : boolean — use position:fixed instead of absolute. default false.
- *  - label      : string  — optional text below the bolt. default "Loading…"
- *  - size       : "sm" | "md" — sm = 24px inline variant. default "md"
+ *  overlay    {boolean} – wrap in absolute overlay covering parent. default true.
+ *  fullscreen {boolean} – use fixed positioning (covers full viewport). default false.
+ *  label      {string}  – text shown below the bolt. default "Loading…". pass "" to hide.
+ *  size       {"md"|"sm"} – md = 72px standalone, sm = 22px inline. default "md".
  */
 const NarLoader = ({
   overlay = true,
@@ -18,41 +20,66 @@ const NarLoader = ({
 }) => {
   const uid = useId().replace(/:/g, '');
 
-  // SVG bolt — the same full shape clipped per half via unique IDs.
-  // ViewBox: 0 0 40 56. Split y = 28.
-  const BoltSVG = ({ half }) => {
-    const gradId = `ng-${uid}-${half}`;
-    const clipId = `clip-${uid}-${half}`;
-    const clipY = half === 'top' ? 0 : 28;
+  /*
+    Full bolt path inside a 48 × 72 viewBox.
+    The bolt is split at y = 36 (vertical midpoint).
+    Top half  → clipped to rect(0 0 48 36)
+    Bottom half → clipped to rect(0 36 48 36)
+  */
+  const VIEWBOX = '0 0 48 72';
+  const PATH = 'M34 2 L6 40 L22 40 L14 70 L42 32 L26 32 Z';
+
+  const BoltHalf = ({ half }) => {
+    const gId = `g-${uid}-${half}`;
+    const cId = `c-${uid}-${half}`;
+    const isTop = half === 'top';
 
     return (
-      <svg viewBox="0 0 40 56" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <svg
+        viewBox={VIEWBOX}
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
         <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="40" y2="56" gradientUnits="userSpaceOnUse">
+          <linearGradient id={gId} x1="0" y1="0" x2="48" y2="72" gradientUnits="userSpaceOnUse">
             <stop offset="0%" stopColor="#a855f7" />
+            <stop offset="55%" stopColor="#7c3aed" />
             <stop offset="100%" stopColor="#3b82f6" />
           </linearGradient>
-          <clipPath id={clipId}>
-            <rect x="0" y={clipY} width="40" height="28" />
+          <clipPath id={cId}>
+            {/* Top half: rows 0-36. Bottom half: rows 36-72 */}
+            <rect x="0" y={isTop ? 0 : 36} width="48" height="36" />
           </clipPath>
         </defs>
         <path
-          d="M26 2 L4 30 L17 30 L14 54 L36 26 L23 26 Z"
-          fill={`url(#${gradId})`}
-          clipPath={`url(#${clipId})`}
-          style={{ filter: 'drop-shadow(0 0 8px rgba(168,85,247,0.6))' }}
+          d={PATH}
+          fill={`url(#${gId})`}
+          clipPath={`url(#${cId})`}
+          style={{
+            filter: `drop-shadow(0 0 10px rgba(168,85,247,0.7))`,
+          }}
         />
       </svg>
     );
   };
 
+  const Bolt = () => (
+    <div className="nar-bolt">
+      <div className="nar-bolt-half top">
+        <BoltHalf half="top" />
+      </div>
+      <div className="nar-bolt-half bottom">
+        <BoltHalf half="bottom" />
+      </div>
+    </div>
+  );
+
+  /* ---- Small inline variant ---- */
   if (size === 'sm') {
     return (
       <span className="nar-loader-inline">
-        <span className="nar-loader">
-          <span className="half-top"><BoltSVG half="top" /></span>
-          <span className="half-bottom"><BoltSVG half="bottom" /></span>
-        </span>
+        <Bolt />
         {label && (
           <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
             {label}
@@ -62,18 +89,19 @@ const NarLoader = ({
     );
   }
 
-  const inner = (
-    <div className="nar-loader" role="status" aria-label={label || 'Loading'}>
-      <span className="half-top"><BoltSVG half="top" /></span>
-      <span className="half-bottom"><BoltSVG half="bottom" /></span>
-    </div>
-  );
+  /* ---- Standalone (no overlay) ---- */
+  if (!overlay) {
+    return <Bolt />;
+  }
 
-  if (!overlay) return inner;
-
+  /* ---- Overlay variant ---- */
   return (
-    <div className={`nar-loader-overlay${fullscreen ? ' fullscreen' : ''}`}>
-      {inner}
+    <div
+      className={`nar-loader-overlay${fullscreen ? ' fullscreen' : ''}`}
+      role="status"
+      aria-label={label || 'Loading'}
+    >
+      <Bolt />
       {label && <p className="nar-loader-label">{label}</p>}
     </div>
   );
