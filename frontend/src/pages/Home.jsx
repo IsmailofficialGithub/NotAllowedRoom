@@ -3,12 +3,12 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
+import NarLoader from '../components/Loader';
 import { 
   LogIn,
   Plus, 
   Users, 
-  LogOut, 
-  LoaderCircle,
+  LogOut,
   MessageSquare, 
   Pencil,
   Search, 
@@ -492,18 +492,23 @@ const Home = () => {
       </div>
 
       {/* Room Grid */}
-      <div className={`room-grid ${roomView === 'list' ? 'list-layout' : ''}`}>
-        {loading ? (
-           [1,2,3,4,5,6,7,8].map(i => <div key={i} className="glass card room-card" style={{ height: '120px', opacity: 0.5 }}></div>)
-        ) : filteredRooms.length > 0 ? (
-          filteredRooms.map(renderRoomCard)
-        ) : (
-          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '100px 0', color: 'var(--text-dim)' }}>
-            <MessageSquare size={48} style={{ marginBottom: '16px', opacity: 0.2 }} />
-            <p>No rooms found. Why not create one?</p>
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <div style={{ minHeight: '320px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+          <NarLoader overlay={false} />
+          <p className="nar-loader-label">Loading rooms…</p>
+        </div>
+      ) : (
+        <div className={`room-grid ${roomView === 'list' ? 'list-layout' : ''}`}>
+          {filteredRooms.length > 0 ? (
+            filteredRooms.map(renderRoomCard)
+          ) : (
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '100px 0', color: 'var(--text-dim)' }}>
+              <MessageSquare size={48} style={{ marginBottom: '16px', opacity: 0.2 }} />
+              <p>No rooms found. Why not create one?</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Create Room Modal */}
       {showCreateModal && (
@@ -562,10 +567,7 @@ const Home = () => {
                 </button>
                 <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={isCreatingRoom}>
                   {isCreatingRoom ? (
-                    <>
-                      <LoaderCircle size={18} className="spin-icon" />
-                      Creating
-                    </>
+                    <NarLoader size="sm" label="Creating" />
                   ) : (
                     'Create'
                   )}
@@ -646,7 +648,7 @@ const Home = () => {
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={isUpdatingRoom}>
-                  {isUpdatingRoom ? <><LoaderCircle size={18} className="spin-icon" /> Saving</> : 'Save'}
+                  {isUpdatingRoom ? <NarLoader size="sm" label="Saving" /> : 'Save'}
                 </button>
               </div>
             </form>
@@ -683,7 +685,10 @@ const Home = () => {
             </div>
 
             {participantsLoading ? (
-              <div className="participants-loading"><LoaderCircle size={20} className="spin-icon" /> Loading</div>
+              <div className="nar-loader-section">
+                <NarLoader overlay={false} />
+                <p className="nar-loader-label">Loading participants…</p>
+              </div>
             ) : participantsError ? (
               <p className="modal-error">{participantsError}</p>
             ) : participantsModal.data.length > 0 ? (
@@ -706,7 +711,7 @@ const Home = () => {
                         title="Remove from room"
                       >
                         {removingParticipantId === participant.id ? (
-                          <LoaderCircle size={15} className="spin-icon" />
+                          <NarLoader size="sm" label="" />
                         ) : (
                           <Trash2 size={15} />
                         )}
@@ -719,27 +724,29 @@ const Home = () => {
               <p className="modal-copy">No one is active in this room yet.</p>
             )}
 
-            <div className="pagination-row">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={participantsLoading || (participantsModal.pagination?.page || 1) <= 1}
-                onClick={() => openParticipants(participantsModal.room, participantsModal.pagination.page - 1)}
-              >
-                <ChevronLeft size={16} /> Prev
-              </button>
-              <span>
-                Page {participantsModal.pagination?.page || 1} of {participantsModal.pagination?.totalPages || 1}
-              </span>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={participantsLoading || (participantsModal.pagination?.page || 1) >= (participantsModal.pagination?.totalPages || 1)}
-                onClick={() => openParticipants(participantsModal.room, participantsModal.pagination.page + 1)}
-              >
-                Next <ChevronRight size={16} />
-              </button>
-            </div>
+            {!participantsLoading && (
+              <div className="pagination-row">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={(participantsModal.pagination?.page || 1) <= 1}
+                  onClick={() => openParticipants(participantsModal.room, participantsModal.pagination.page - 1)}
+                >
+                  <ChevronLeft size={16} /> Prev
+                </button>
+                <span>
+                  Page {participantsModal.pagination?.page || 1} of {participantsModal.pagination?.totalPages || 1}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={(participantsModal.pagination?.page || 1) >= (participantsModal.pagination?.totalPages || 1)}
+                  onClick={() => openParticipants(participantsModal.room, participantsModal.pagination.page + 1)}
+                >
+                  Next <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
           </motion.div>
         </div>
       )}

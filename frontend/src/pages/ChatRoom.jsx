@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import CallOverlay from '../components/CallOverlay';
 import DateTimeBadge from '../components/DateTimeBadge';
+import NarLoader from '../components/Loader';
 import { isDuplicateRequest } from '../lib/preventDuplicateRequests';
 import './ChatRoom.css';
 
@@ -514,16 +515,7 @@ const ChatRoom = () => {
       )}
 
       {isCheckingRoomAccess && !showGuestPrompt && !showPasswordPrompt && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          zIndex: 95, background: 'var(--bg-primary)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass card" style={{ width: '100%', maxWidth: '320px', textAlign: 'center' }}>
-            <h2 style={{ marginBottom: '8px' }}>Checking room access</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Please wait...</p>
-          </motion.div>
-        </div>
+        <NarLoader fullscreen label="Checking room access…" />
       )}
 
       {/* Join Notification Toast */}

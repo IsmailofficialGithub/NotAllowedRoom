@@ -1,0 +1,151 @@
+/* ===========================
+   NAR Loader – Split bolt animation
+   =========================== */
+
+.nar-loader-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 95;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.nar-loader-overlay.fullscreen {
+  position: fixed;
+}
+
+/* The wrapper that clips & rotates */
+.nar-loader {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  animation: nar-rotate 1.4s ease-in-out infinite;
+}
+
+/* Each half — pure CSS clip-path lightning bolt halves */
+.nar-loader-half {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* SVG bolt halves */
+.nar-loader svg {
+  width: 64px;
+  height: 64px;
+  overflow: visible;
+}
+
+/* Top half slides in from top */
+.nar-loader .half-top {
+  animation: nar-slide-top 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Bottom half slides in from bottom */
+.nar-loader .half-bottom {
+  animation: nar-slide-bottom 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes nar-slide-top {
+  0%, 10% {
+    transform: translateY(-36px);
+    opacity: 0;
+  }
+  35%, 65% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  90%, 100% {
+    transform: translateY(-36px);
+    opacity: 0;
+  }
+}
+
+@keyframes nar-slide-bottom {
+  0%, 10% {
+    transform: translateY(36px);
+    opacity: 0;
+  }
+  35%, 65% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  90%, 100% {
+    transform: translateY(36px);
+    opacity: 0;
+  }
+}
+
+@keyframes nar-rotate {
+  0%    { transform: rotate(0deg); }
+  35%   { transform: rotate(0deg); }
+  65%   { transform: rotate(180deg); }
+  100%  { transform: rotate(180deg); }
+}
+
+/* Label below */
+.nar-loader-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.03em;
+  animation: nar-fade-label 1.4s ease-in-out infinite;
+}
+
+@keyframes nar-fade-label {
+  0%, 15%  { opacity: 0.3; }
+  40%, 60% { opacity: 1; }
+  85%, 100% { opacity: 0.3; }
+}
+
+/* Inline / small variant (used inside buttons, cards) */
+.nar-loader-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.nar-loader-inline .nar-loader {
+  width: 24px;
+  height: 24px;
+}
+
+.nar-loader-inline .nar-loader svg {
+  width: 24px;
+  height: 24px;
+}
+
+.nar-loader-inline .half-top {
+  animation: nar-slide-top-sm 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.nar-loader-inline .half-bottom {
+  animation: nar-slide-bottom-sm 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes nar-slide-top-sm {
+  0%, 10%   { transform: translateY(-14px); opacity: 0; }
+  35%, 65%  { transform: translateY(0);     opacity: 1; }
+  90%, 100% { transform: translateY(-14px); opacity: 0; }
+}
+@keyframes nar-slide-bottom-sm {
+  0%, 10%   { transform: translateY(14px); opacity: 0; }
+  35%, 65%  { transform: translateY(0);    opacity: 1; }
+  90%, 100% { transform: translateY(14px); opacity: 0; }
+}
+
+/* Participants loading area — centered in a min-height region */
+.nar-loader-section {
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}

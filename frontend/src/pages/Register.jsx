@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
 import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import NarLoader from '../components/Loader';
 
 const Register = () => {
   const [name, setName] = useState('');
@@ -156,7 +157,7 @@ const Register = () => {
             style={{ width: '100%', padding: '14px' }}
             disabled={loading || success}
           >
-            {loading ? 'Creating account...' : (
+            {loading ? <NarLoader size="sm" label="Creating account" /> : (
               <>
                 <UserPlus size={20} />
                 Register

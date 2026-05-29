@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
 import { LogIn, Mail, Lock, AlertCircle, ArrowLeft } from 'lucide-react';
+import NarLoader from '../components/Loader';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -114,7 +115,7 @@ const Login = () => {
             style={{ width: '100%', padding: '14px' }}
             disabled={loading}
           >
-            {loading ? 'Logging in...' : (
+            {loading ? <NarLoader size="sm" label="Signing in" /> : (
               <>
                 <LogIn size={20} />
                 Sign In
