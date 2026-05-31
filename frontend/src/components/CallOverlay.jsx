@@ -43,6 +43,7 @@ const CallOverlay = ({
   const [openDeviceMenu, setOpenDeviceMenu] = useState(null);
   const [showChat, setShowChat] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [screenDisplaySurface, setScreenDisplaySurface] = useState('');
   
   const localVideoRef = useRef();
   const localScreenVideoRef = useRef();
@@ -56,6 +57,12 @@ const CallOverlay = ({
   const iceCandidatesQueue = useRef({}); // { socketId: [candidates] }
   const containerRef = useRef(null);
   const itemRefs = useRef({});
+
+  const getOutgoingVideoTrack = () => (
+    screenStreamRef.current?.getVideoTracks()[0] ||
+    localStreamRef.current?.getVideoTracks()[0] ||
+    null
+  );
 
   // Fetch available devices
   useEffect(() => {
@@ -303,7 +310,7 @@ const CallOverlay = ({
     if (localStreamRef.current) {
       console.log(`[WebRTC] Adding tracks to peer ${targetSocketId}`);
       const audioTracks = localStreamRef.current.getAudioTracks();
-      const videoTrack = screenStreamRef.current?.getVideoTracks()[0] || localStreamRef.current.getVideoTracks()[0];
+      const videoTrack = getOutgoingVideoTrack();
 
       audioTracks.forEach(track => {
         peer.addTrack(track, localStreamRef.current);
@@ -436,6 +443,7 @@ const CallOverlay = ({
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         screenStreamRef.current = stream;
         const track = stream.getVideoTracks()[0];
+        setScreenDisplaySurface(track.getSettings?.().displaySurface || '');
         Object.values(peersRef.current).forEach(peer => {
           const sender = peer.getSenders().find(s => s.track?.kind === 'video');
           if (sender) sender.replaceTrack(track); else peer.addTrack(track, stream);
@@ -448,6 +456,7 @@ const CallOverlay = ({
 
   const stopScreenShare = () => {
     if (screenStreamRef.current) { screenStreamRef.current.getTracks().forEach(t => t.stop()); screenStreamRef.current = null; }
+    setScreenDisplaySurface('');
     const camTrack = localStreamRef.current?.getVideoTracks()[0];
     Object.values(peersRef.current).forEach(peer => {
       const sender = peer.getSenders().find(s => s.track?.kind === 'video');
@@ -487,6 +496,7 @@ const CallOverlay = ({
 
   const remotesCount = Object.keys(callParticipants).length;
   const totalParticipants = remotesCount + 1;
+  const canPreviewOwnScreen = isScreenSharing && screenDisplaySurface && screenDisplaySurface !== 'monitor';
   const getGridClass = () => {
     if (totalParticipants === 1) return 'grid-1';
     if (totalParticipants === 2) return 'grid-2';
@@ -716,7 +726,15 @@ const CallOverlay = ({
                     {!isScreenSharing && <video ref={localVideoRef} autoPlay muted playsInline />}
                     {isScreenSharing && (
                       <div className="screen-share-preview">
-                        <video ref={localScreenVideoRef} className="screen-share-video" autoPlay muted playsInline />
+                        {canPreviewOwnScreen ? (
+                          <video ref={localScreenVideoRef} className="screen-share-video" autoPlay muted playsInline />
+                        ) : (
+                          <div className="screen-share-safe-preview">
+                            <div className="screen-share-icon"><Maximize2 size={28} /></div>
+                            <strong>You are sharing your screen</strong>
+                            <span>Preview is hidden for full-screen sharing to prevent the mirror effect.</span>
+                          </div>
+                        )}
                         {!isCameraOff && (
                           <div className="screen-camera-pip">
                             <video ref={localVideoRef} autoPlay muted playsInline />
@@ -961,6 +979,10 @@ const CallOverlay = ({
         .user-avatar { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #a855f7); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 2rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 3px solid rgba(255,255,255,0.15); }
         .screen-share-preview { position: absolute; inset: 0; background: #020617; }
         .screen-share-video { width: 100%; height: 100%; object-fit: contain !important; background: #020617; transform: none !important; }
+        .screen-share-safe-preview { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; background: radial-gradient(circle at 50% 42%, rgba(251,191,36,0.14), transparent 32%), linear-gradient(135deg, #020617, #0f172a); color: white; }
+        .screen-share-icon { width: 58px; height: 58px; border-radius: 18px; display: flex; align-items: center; justify-content: center; color: #fbbf24; background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.24); box-shadow: 0 0 30px rgba(251,191,36,0.16); }
+        .screen-share-safe-preview strong { font-size: 1rem; line-height: 1.2; }
+        .screen-share-safe-preview span { max-width: 300px; color: #94a3b8; font-size: 0.78rem; line-height: 1.4; }
         .screen-camera-pip { position: absolute; right: 14px; bottom: 14px; width: min(180px, 28%); aspect-ratio: 4 / 3; overflow: hidden; border-radius: 14px; border: 1px solid rgba(255,255,255,0.18); background: #0f172a; box-shadow: 0 16px 40px rgba(0,0,0,0.45); z-index: 6; }
         .screen-camera-pip video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         .screen-share-status { position: absolute; top: 12px; right: 12px; z-index: 6; display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 999px; background: rgba(15,23,42,0.78); border: 1px solid rgba(251,191,36,0.28); color: #fbbf24; font-size: 0.72rem; font-weight: 800; backdrop-filter: blur(12px); }
