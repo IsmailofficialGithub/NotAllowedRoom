@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { BoltMark } from './Loader';
 import './SplashScreen.css';
 
 const ROTATING_MESSAGES = [
@@ -80,12 +81,7 @@ const SplashScreen = ({ onDone }) => {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.2, ease: 'backOut' }}
           >
-            <div className="splash-bolt-half top">
-              <img src="/favicon.svg" alt="" draggable={false} />
-            </div>
-            <div className="splash-bolt-half bottom">
-              <img src="/favicon.svg" alt="" draggable={false} />
-            </div>
+            <BoltMark className="splash-bolt" />
           </motion.div>
 
           {/* Phase message */}
