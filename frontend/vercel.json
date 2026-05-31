@@ -1,8 +1,12 @@
 {
-    "rewrites": [
-        {
-            "source": "/api/:path*",
-            "destination": "https://api-notallowed.109.123.251.103.sslip.io/api/:path*"
-        }
-    ]
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://api-notallowed.109.123.251.103.sslip.io/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }
