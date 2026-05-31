@@ -45,6 +45,7 @@ const CallOverlay = ({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   
   const localVideoRef = useRef();
+  const localScreenVideoRef = useRef();
   const localStreamRef = useRef(null);
   const peersRef = useRef({});
   const screenStreamRef = useRef(null);
@@ -175,9 +176,17 @@ const CallOverlay = ({
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.style.transform = 'scaleX(-1)';
       localVideoRef.current.play().catch(e => console.error('Video play failed:', e));
     }
-  }, [localStream, isJoined]);
+  }, [localStream, isJoined, isScreenSharing]);
+
+  useEffect(() => {
+    if (localScreenVideoRef.current && screenStreamRef.current && isScreenSharing) {
+      localScreenVideoRef.current.srcObject = screenStreamRef.current;
+      localScreenVideoRef.current.play().catch(e => console.error('Screen preview play failed:', e));
+    }
+  }, [isScreenSharing]);
 
   const changeDevice = async (type, deviceId) => {
     try {
@@ -216,7 +225,7 @@ const CallOverlay = ({
       if (isJoined) {
         Object.values(peersRef.current).forEach(peer => {
           const sender = peer.getSenders().find(s => s.track?.kind === type);
-          if (sender) sender.replaceTrack(newTrack);
+          if (sender && (type !== 'video' || !isScreenSharing)) sender.replaceTrack(newTrack);
         });
       }
 
@@ -293,9 +302,16 @@ const CallOverlay = ({
 
     if (localStreamRef.current) {
       console.log(`[WebRTC] Adding tracks to peer ${targetSocketId}`);
-      localStreamRef.current.getTracks().forEach(track => {
+      const audioTracks = localStreamRef.current.getAudioTracks();
+      const videoTrack = screenStreamRef.current?.getVideoTracks()[0] || localStreamRef.current.getVideoTracks()[0];
+
+      audioTracks.forEach(track => {
         peer.addTrack(track, localStreamRef.current);
       });
+
+      if (videoTrack) {
+        peer.addTrack(videoTrack, screenStreamRef.current || localStreamRef.current);
+      }
     }
 
     return peer;
@@ -404,7 +420,7 @@ const CallOverlay = ({
   };
 
   const toggleCamera = async () => {
-    if (!localStreamRef.current || isScreenSharing) return;
+    if (!localStreamRef.current) return;
     let videoTrack = localStreamRef.current.getVideoTracks()[0];
     if (videoTrack) {
       const isCurrentlyOff = !videoTrack.enabled;
@@ -424,7 +440,6 @@ const CallOverlay = ({
           const sender = peer.getSenders().find(s => s.track?.kind === 'video');
           if (sender) sender.replaceTrack(track); else peer.addTrack(track, stream);
         });
-        if (localVideoRef.current) { localVideoRef.current.srcObject = stream; localVideoRef.current.style.transform = 'none'; }
         setIsScreenSharing(true);
         track.onended = () => stopScreenShare();
       } catch (err) { console.error('Screen sharing failed:', err); }
@@ -438,11 +453,11 @@ const CallOverlay = ({
       const sender = peer.getSenders().find(s => s.track?.kind === 'video');
       if (sender && camTrack) sender.replaceTrack(camTrack);
     });
-    if (localVideoRef.current && localStreamRef.current) { localVideoRef.current.srcObject = localStreamRef.current; localVideoRef.current.style.transform = 'scaleX(-1)'; }
     setIsScreenSharing(false);
   };
 
   const handleLeave = () => {
+    if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(track => track.stop());
     if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => track.stop());
     if (onEndCall) onEndCall();
     else onLeave();
@@ -698,7 +713,21 @@ const CallOverlay = ({
               >
                 {isLocal ? (
                   <>
-                    <video ref={localVideoRef} autoPlay muted playsInline />
+                    {!isScreenSharing && <video ref={localVideoRef} autoPlay muted playsInline />}
+                    {isScreenSharing && (
+                      <div className="screen-share-preview">
+                        <video ref={localScreenVideoRef} className="screen-share-video" autoPlay muted playsInline />
+                        {!isCameraOff && (
+                          <div className="screen-camera-pip">
+                            <video ref={localVideoRef} autoPlay muted playsInline />
+                          </div>
+                        )}
+                        <div className="screen-share-status">
+                          <Maximize2 size={14} />
+                          Sharing screen
+                        </div>
+                      </div>
+                    )}
                     {isCameraOff && !isScreenSharing && (
                       <div className="camera-off-placeholder">
                         <div className="user-avatar">You</div>
@@ -730,7 +759,6 @@ const CallOverlay = ({
           </button>
           <button 
             onClick={toggleCamera} 
-            disabled={isScreenSharing} 
             className={`action-btn ${isCameraOff ? 'camera-off' : ''}`}
           >
             {isCameraOff ? <VideoOff /> : <Video />}
@@ -931,6 +959,11 @@ const CallOverlay = ({
         .participant-label { position: absolute; bottom: 12px; left: 12px; background: rgba(15, 23, 42, 0.7); padding: 4px 10px; border-radius: 8px; font-size: 0.7rem; backdrop-filter: blur(12px); display: flex; align-items: center; gap: 6px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); z-index: 5; }
         .camera-off-placeholder { position: absolute; inset: 0; background: #0f172a; display: flex; align-items: center; justify-content: center; }
         .user-avatar { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #a855f7); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 2rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 3px solid rgba(255,255,255,0.15); }
+        .screen-share-preview { position: absolute; inset: 0; background: #020617; }
+        .screen-share-video { width: 100%; height: 100%; object-fit: contain !important; background: #020617; transform: none !important; }
+        .screen-camera-pip { position: absolute; right: 14px; bottom: 14px; width: min(180px, 28%); aspect-ratio: 4 / 3; overflow: hidden; border-radius: 14px; border: 1px solid rgba(255,255,255,0.18); background: #0f172a; box-shadow: 0 16px 40px rgba(0,0,0,0.45); z-index: 6; }
+        .screen-camera-pip video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        .screen-share-status { position: absolute; top: 12px; right: 12px; z-index: 6; display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 999px; background: rgba(15,23,42,0.78); border: 1px solid rgba(251,191,36,0.28); color: #fbbf24; font-size: 0.72rem; font-weight: 800; backdrop-filter: blur(12px); }
         
         .call-controls { padding: 20px; background: linear-gradient(transparent, rgba(0,0,0,0.9)); flex-shrink: 0; display: flex; justify-content: center; }
         .controls-inner { display: flex; gap: 12px; background: rgba(15, 23, 42, 0.9); padding: 12px 20px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(30px); }
